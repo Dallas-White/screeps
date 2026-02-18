@@ -1,0 +1,147 @@
+import Process, { ProcessRegistry } from "Process";
+import { EnergyConsumer, EnergyProducer } from "utils/EnergyBalance";
+import Reserver from "./Reserver";
+import ScoutProcess from "./scoutProcess";
+import BuilderProcess from "./BuilderProcess";
+import Kernel from "Kernel";
+import HarvesterProcess from "./HarvesterProcess";
+import RepairerProcess from "./RepairerProcess";
+import Hauler from "./Hauler";
+import AttackCreepProcess from "./combat/AttackCreepProcess";
+
+export default class RemoteMiner extends Process implements EnergyConsumer, EnergyProducer {
+
+    constructor(kernel: Kernel, parent: number, parentRoom: string, mineRoom: string) {
+        super(kernel, parent)
+        this.memory.parentRoom = parentRoom
+        this.memory.mineRoom = mineRoom
+    }
+    resetEnergyProduction(): void {
+        for (let x of this.getChildren()) {
+            if (!this.kernel.getProcess(x)) {
+                continue
+            }
+            if ("getEnergyProduced" in this.kernel.getProcess(x)!) {
+            }
+            if ("getAverageEnergyConsumption" in this.kernel.getProcess(x)!) {
+            }
+        }
+    }
+    getProductionTimer(): number {
+        return 0
+    }
+    getAverageEnergyProduction(): number {
+        let energySum = 0
+        for (let x of this.getChildren()) {
+            if (!this.kernel.getProcess(x)) {
+                continue
+            }
+            if ("getEnergyProduced" in this.kernel.getProcess(x)!) {
+                energySum += (this.kernel.getProcess(x)! as unknown as EnergyProducer).getAverageEnergyProduction();
+            }
+        }
+        return energySum
+    }
+    resetEnergyConsumption(): void {
+        return
+    }
+    getConsumptionTimer(): number {
+        return 0
+    }
+    getAverageEnergyConsumption(): number {
+        let energySum = 0
+        for (let x of this.getChildren()) {
+            if (!this.kernel.getProcess(x)) {
+                continue
+            }
+            if ("getAverageEnergyConsumption" in this.kernel.getProcess(x)!) {
+                energySum += (this.kernel.getProcess(x)! as unknown as EnergyConsumer).getAverageEnergyConsumption();
+            }
+        }
+        return energySum
+    }
+    run(): void {
+        if (!this.memory.reserver) {
+            let reserver = new Reserver(this.kernel, this.getPID(), this.getParent(), this.memory.mineRoom);
+            this.kernel.addProcess(reserver)
+            this.memory.reserver = reserver
+        }
+
+        if (!Game.rooms[this.memory.mineRoom]) return
+        if (!this.memory.harvesters) {
+            for (let source of Game.rooms[this.memory.mineRoom].find(FIND_SOURCES)) {
+                this.kernel.addProcess(new HarvesterProcess(this.kernel, this.getPID(), this.getParent(),source))
+            }
+            this.memory.harvesters = true
+        }
+        if (!this.memory.planned) {
+            let exit = Game.rooms[this.memory.mineRoom].find(Game.rooms[this.memory.mineRoom].findExitTo(this.memory.parentRoom) as ExitConstant)
+            let failed = false
+            let controller_path = PathFinder.search(Game.rooms[this.memory.mineRoom].controller!.pos, exit)
+            for (let p of controller_path.path) {
+                if(Game.rooms[this.memory.mineRoom].createConstructionSite(p.x, p.y, STRUCTURE_ROAD) == ERR_FULL) failed = true
+            }
+            for (let source of Game.rooms[this.memory.mineRoom].find(FIND_SOURCES)) {
+                let path = PathFinder.search(source.pos, exit);
+                let container = path.path.shift()!
+                let construct_result = Game.rooms[this.memory.mineRoom].createConstructionSite(container.x, container.y, STRUCTURE_CONTAINER)
+                if (construct_result == ERR_FULL) {
+                    failed = true
+                }
+                for (let pos of path.path) {
+                    let construct_result = Game.rooms[this.memory.mineRoom].createConstructionSite(pos.x, pos.y, STRUCTURE_ROAD)
+                    if (construct_result == ERR_FULL) {
+                        failed = true
+                    }
+                }
+            }
+            if (failed) {
+                this.sleep(1000)
+                return
+            }
+            let constructionProcess = new BuilderProcess(this.kernel, this.getPID(), this.getParent(), this.memory.mineRoom)
+            this.kernel.addProcess(constructionProcess)
+            this.memory.planned = true
+        }
+        if (!this.memory.repair) {
+            let repairProc = new RepairerProcess(this.kernel, this.getPID(), this.getParent(), this.memory.mineRoom)
+            this.kernel.addProcess(repairProc)
+            this.memory.repair = repairProc
+        }
+        if (!this.memory.haulersSpawned && Game.rooms[this.memory.mineRoom].find(FIND_CONSTRUCTION_SITES).length == 0) {
+            let containers = Game.rooms[this.memory.mineRoom].find(FIND_STRUCTURES, { filter: (s) => s.structureType == STRUCTURE_CONTAINER })
+            for (let container of containers) {
+                this.kernel.addProcess(new Hauler(this.kernel, this.getPID(), this.getParent(),
+                    container.id, Game.rooms[this.memory.parentRoom].storage!.id, 0, 3, RESOURCE_ENERGY, undefined))
+            }
+            this.memory.haulersSpawned = true
+        }
+        if (Game.rooms[this.memory.mineRoom].find(FIND_HOSTILE_CREEPS).length > 0 || Game.rooms[this.memory.mineRoom].find(FIND_HOSTILE_STRUCTURES).length > 0) {
+            let hostileAttackParts = _.sum(Game.rooms[this.memory.mineRoom].find(FIND_HOSTILE_CREEPS).map((c) => _.sum(_.filter(c.body, (c) => c.type == ATTACK || c.type == HEAL || c.type == RANGED_ATTACK))))
+            if (!this.memory.defender) {
+                let defenseProcess = new AttackCreepProcess(this.kernel, this.getPID(), this.getParent(), Math.max(hostileAttackParts*2, 6), [TOUGH, ATTACK, MOVE], this.memory.mineRoom, undefined)
+                this.memory.defender = defenseProcess.getPID()
+                this.kernel.addProcess(defenseProcess)
+            }
+            let defenseProcess = this.kernel.getProcess(this.memory.defender)! as AttackCreepProcess
+            if (defenseProcess.getScale() < hostileAttackParts*3) {
+                defenseProcess.setScale(hostileAttackParts*3)
+            }
+        } else if (this.memory.defender) {
+            this.memory.defender = undefined
+            this.kernel.getProcess(this.memory.healer)?.shutdown()
+            this.kernel.getProcess(this.memory.defender)?.shutdown()
+            this.memory.healer = undefined
+        }
+
+
+
+
+    }
+    getType(): string {
+        return "RemoteMiner"
+    }
+
+}
+
+ProcessRegistry.register("RemoteMiner", RemoteMiner)
