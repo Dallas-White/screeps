@@ -6,7 +6,7 @@ import RoomManagerProcess from "./RoomManagerProcess";
 export class RoomBootstrapProcess extends CreepProcess {
 
     generateSpawnRequest(): [ratio: BodyPartConstant[], targetScale: number, baseparts: (BodyPartConstant[] | undefined), maxCreeps: (number | undefined)] {
-        return [[MOVE, WORK, CARRY],1,undefined, undefined]
+        return [[MOVE, WORK, CARRY], 1, undefined, undefined]
     }
 
     getSpawningPriority(): number {
@@ -68,9 +68,17 @@ export class RoomBootstrapProcess extends CreepProcess {
 
 
         } else if (this.memory.state == "supplying") {
-            let transferTarget = c.pos.findClosestByPath(FIND_MY_STRUCTURES, {filter: (struct) => (struct.structureType == STRUCTURE_SPAWN || struct.structureType == STRUCTURE_EXTENSION) && struct.store.getFreeCapacity(RESOURCE_ENERGY) > 0});
+            let transferTarget = c.pos.findClosestByRange(FIND_MY_STRUCTURES, { filter: (struct) => (struct.structureType == STRUCTURE_SPAWN || struct.structureType == STRUCTURE_EXTENSION) && struct.store.getFreeCapacity(RESOURCE_ENERGY) > 0 });
             if (!transferTarget) {
-                this.park(c);
+                let buildTarget = c.pos.findClosestByRange(FIND_CONSTRUCTION_SITES);
+                if (!buildTarget) {
+                    this.park(c)
+                    return
+                }
+                let buildResult = c.build(buildTarget);
+                if (buildResult == ERR_NOT_IN_RANGE) {
+                    c.moveTo(buildTarget);
+                }
                 return;
             }
             let transferResult = c.transfer(transferTarget as unknown as StructureExtension, RESOURCE_ENERGY)
@@ -97,7 +105,7 @@ export class RoomBootstrapProcess extends CreepProcess {
 
 }
 
-ProcessRegistry.register("RoomBootstrapProcess",RoomBootstrapProcess)
+ProcessRegistry.register("RoomBootstrapProcess", RoomBootstrapProcess)
 
 
 
