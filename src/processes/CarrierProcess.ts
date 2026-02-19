@@ -15,9 +15,9 @@ export default class CarrierProcess extends CreepProcess {
             moveToRoom(c, this.memory.room)
             return
         }
-        if(!creepMemory.state) creepMemory.state = "fetching"
+        if (!creepMemory.state) creepMemory.state = "fetching"
         let jobs = [new RefillPriorityJob(), new DroppedEnergyToStorageJob(), new SourceToRemoteContainersJob(), new SourceToStorage(), new SourceToTerminal()]
-        if(!creepMemory.currentJobIdx) {
+        if (!creepMemory.currentJobIdx) {
             for (let job in jobs) {
                 if (jobs[job].checkJob(c)) {
                     creepMemory.currentJobIdx = job
@@ -40,7 +40,7 @@ export default class CarrierProcess extends CreepProcess {
                 let fetchTarget = Game.getObjectById(creepMemory.fetchTarget)
                 if (!fetchTarget || (fetchTarget instanceof Structure && (fetchTarget as StructureStorage).store.getUsedCapacity(RESOURCE_ENERGY) < 50)
                     || (fetchTarget instanceof Resource && (fetchTarget as Resource).amount < 50)) {
-                        needsNewFetch = true
+                    needsNewFetch = true
                 }
             } else {
                 needsNewFetch = true
@@ -62,7 +62,7 @@ export default class CarrierProcess extends CreepProcess {
             } else if (fetchTarget instanceof Resource) {
                 returnCode = c.pickup(fetchTarget)
             }
-            if(returnCode == ERR_NOT_IN_RANGE) {
+            if (returnCode == ERR_NOT_IN_RANGE) {
                 c.moveTo((fetchTarget as unknown as _HasRoomPosition))
             } else if (returnCode == OK) {
                 creepMemory.state = "depositing"
@@ -90,10 +90,10 @@ export default class CarrierProcess extends CreepProcess {
             }
             let destination = Game.getObjectById(creepMemory.destination)
             let returnCode = c.transfer(destination as Structure, RESOURCE_ENERGY)
-            if(returnCode == ERR_NOT_IN_RANGE) {
+            if (returnCode == ERR_NOT_IN_RANGE) {
                 c.moveTo((destination as unknown as _HasRoomPosition))
             } else {
-                if(c.store.getUsedCapacity() == 0) creepMemory.state = "fetching"
+                if (c.store.getUsedCapacity() == 0) creepMemory.state = "fetching"
                 creepMemory.currentJobIdx = undefined
                 creepMemory.fetchTarget = undefined
                 creepMemory.destination = undefined
@@ -110,8 +110,8 @@ export default class CarrierProcess extends CreepProcess {
     }
 
     generateSpawnRequest(): [ratio: BodyPartConstant[], targetScale: number, baseparts: (BodyPartConstant[] | undefined), maxCreeps: (number | undefined)] {
-        if(!this.memory.scale) this.memory.scale = 3
-        return [[MOVE, CARRY, CARRY], this.memory.scale ,[], undefined]
+        if (!this.memory.scale) this.memory.scale = 5
+        return [[MOVE, CARRY, CARRY], this.memory.scale, [], undefined]
     }
 
     getScale(): number {
@@ -138,19 +138,19 @@ abstract class CarrierJob {
     checkJob(c: Creep): boolean {
         return this.getSource(c) != undefined && this.getDestination(c) != undefined;
     }
-    abstract getSource(c: Creep): Structure | Resource |  undefined
+    abstract getSource(c: Creep): Structure | Resource | undefined
     abstract getDestination(c: Creep): Structure | undefined
 }
 
-class RefillPriorityJob extends CarrierJob{
+class RefillPriorityJob extends CarrierJob {
 
     getSource(creep: Creep): Structure | Resource | undefined {
-        let droppedEnergy: _HasRoomPosition[] = creep.room.find(FIND_DROPPED_RESOURCES, {filter: (filter) => filter.resourceType == RESOURCE_ENERGY && filter.amount > 50});
+        let droppedEnergy: _HasRoomPosition[] = creep.room.find(FIND_DROPPED_RESOURCES, { filter: (filter) => filter.resourceType == RESOURCE_ENERGY && filter.amount > 50 });
         let containers: _HasRoomPosition[] = creep.room.find(FIND_STRUCTURES, {
             filter: function (structure) {
                 if (structure.structureType == STRUCTURE_STORAGE ||
                     structure.structureType == STRUCTURE_LINK || structure.structureType == STRUCTURE_CONTAINER) {
-                        if(structure.store[RESOURCE_ENERGY] > 50) return true
+                    if (structure.store[RESOURCE_ENERGY] > 50) return true
                 }
                 return false
 
@@ -168,7 +168,7 @@ class RefillPriorityJob extends CarrierJob{
                 && structure.store[RESOURCE_ENERGY] < structure.store.getCapacity(RESOURCE_ENERGY)
         })
         let closestJob = c.pos.findClosestByRange(needsFilled)
-        return closestJob? closestJob: undefined
+        return closestJob ? closestJob : undefined
 
 
     }
@@ -181,7 +181,7 @@ class DroppedEnergyToStorageJob extends CarrierJob {
         const dropped = c.pos.findClosestByRange(FIND_DROPPED_RESOURCES, {
             filter: res => res.resourceType === RESOURCE_ENERGY && res.amount > 0
         });
-        return dropped? dropped : undefined
+        return dropped ? dropped : undefined
     }
 
     getDestination(c: Creep) {
@@ -191,7 +191,7 @@ class DroppedEnergyToStorageJob extends CarrierJob {
                 s.store.getFreeCapacity(RESOURCE_ENERGY) > 0 &&
                 c.room.find(FIND_MINERALS).every(spawn => spawn.pos.getRangeTo(s) > 1)
         });
-        return target? target : undefined
+        return target ? target : undefined
     }
 }
 
@@ -204,7 +204,7 @@ class SourceToRemoteContainersJob extends CarrierJob {
                 s.store[RESOURCE_ENERGY] > 0 &&
                 c.room.find(FIND_SOURCES).some(spawn => spawn.pos.getRangeTo(s) <= 1)
         });
-        return source? source : undefined
+        return source ? source : undefined
     }
 
     getDestination(c: Creep) {
@@ -216,7 +216,7 @@ class SourceToRemoteContainersJob extends CarrierJob {
                 c.room.find(FIND_SOURCES).every(spawn => spawn.pos.getRangeTo(s) > 1) &&
                 c.room.find(FIND_MINERALS).every(spawn => spawn.pos.getRangeTo(s) > 1)
         });
-        return target? target : undefined
+        return target ? target : undefined
     }
 }
 
@@ -234,7 +234,7 @@ class SourceToStorage extends CarrierJob {
 
     getDestination(c: Creep) {
 
-        if(c.room.storage && c.room.storage.store[RESOURCE_ENERGY] > 500000) return undefined
+        if (c.room.storage && c.room.storage.store[RESOURCE_ENERGY] > 500000) return undefined
         return c.room.storage
     }
 }
@@ -248,7 +248,7 @@ class SourceToTerminal extends CarrierJob {
                 s.store[RESOURCE_ENERGY] > 0 &&
                 c.room.find(FIND_SOURCES).some(spawn => spawn.pos.getRangeTo(s) <= 1)
         });
-        return source? source : undefined
+        return source ? source : undefined
     }
 
     getDestination(c: Creep) {

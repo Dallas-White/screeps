@@ -18,7 +18,7 @@ import MineralHauler from "./mineralManagement/MineralHauler";
 import LinkManager from "./LinkManager";
 import floodFill from "utils/floodfill";
 
-const SPAWN_EMA_ALPHA=0.05
+const SPAWN_EMA_ALPHA = 0.05
 class RoomManagerProcess extends Process implements SpawnManager {
     constructor(r: Room, kernel: Kernel, parent: number) {
         super(kernel, parent)
@@ -26,7 +26,7 @@ class RoomManagerProcess extends Process implements SpawnManager {
         this.memory.spawnQueue = []
         this.memory.spawnTick = Game.time
     }
-    getMaxEnergy(from_init=false): number {
+    getMaxEnergy(from_init = false): number {
         if (Game.rooms[this.memory.room].energyCapacityAvailable == 0 && !from_init) {
             return (this.kernel.getProcess(this.getParent()) as init).getMaxEnergy()
         } else {
@@ -49,7 +49,7 @@ class RoomManagerProcess extends Process implements SpawnManager {
         var pos = c.pos
         for (var dx = -1; dx <= 1; dx++) {
             for (var dy = -1; dy <= 1; dy++) {
-                if (pos.x + dx < 50 && pos.x + dx >= 0 && pos.y + dy < 50 && pos.y + dy >= 0 && this.memory.parkingMatrix[pos.x + dx + (pos.y + dy)*50] > this.memory.parkingMatrix[pos.x + pos.y * 50]) {
+                if (pos.x + dx < 50 && pos.x + dx >= 0 && pos.y + dy < 50 && pos.y + dy >= 0 && this.memory.parkingMatrix[pos.x + dx + (pos.y + dy) * 50] > this.memory.parkingMatrix[pos.x + pos.y * 50]) {
                     c.moveTo(pos.x + dx, pos.y + dy);
                     return true;
                 }
@@ -94,9 +94,9 @@ class RoomManagerProcess extends Process implements SpawnManager {
             this.memory.bootstrapped = true
         }
         if (this.memory.spawnQueue.length > 0) {
-            if (!this.kernel.getProcess(this.memory.spawnQueue[0].pid) || this.memory.spawnQueue[0].body.length == 0 ||  RoomManagerProcess.calculateBodyCost(this.memory.spawnQueue[0].body) > Game.rooms[this.memory.room].energyCapacityAvailable) {
-                this.memory.spawnQueue.splice(0,1)
-            }  else if (RoomManagerProcess.calculateBodyCost(this.memory.spawnQueue[0].body) <= Game.rooms[this.memory.room].energyAvailable) {
+            if (!this.kernel.getProcess(this.memory.spawnQueue[0].pid) || this.memory.spawnQueue[0].body.length == 0 || RoomManagerProcess.calculateBodyCost(this.memory.spawnQueue[0].body) > Game.rooms[this.memory.room].energyCapacityAvailable) {
+                this.memory.spawnQueue.splice(0, 1)
+            } else if (RoomManagerProcess.calculateBodyCost(this.memory.spawnQueue[0].body) <= Game.rooms[this.memory.room].energyAvailable) {
                 let freeSpawns = Game.rooms[this.memory.room].find(FIND_MY_SPAWNS, { filter: (spawn) => !spawn.spawning });
                 if (freeSpawns.length > 0) {
                     let creepName = this.kernel.getProcess(this.memory.spawnQueue[0].pid)?.getType() + "/" + this.memory.spawnQueue[0].pid + "/" + _.random(0, 1000000);
@@ -115,30 +115,14 @@ class RoomManagerProcess extends Process implements SpawnManager {
             this.memory.spawnEMA.ema = this.memory.spawnQueue.length
             this.memory.spawnEMA.time = Game.time
         } else {
-            this.memory.spawnEMA.ema = this.memory.spawnEMA.ema * (1-SPAWN_EMA_ALPHA) + this.memory.spawnQueue.length * SPAWN_EMA_ALPHA
+            this.memory.spawnEMA.ema = this.memory.spawnEMA.ema * (1 - SPAWN_EMA_ALPHA) + this.memory.spawnQueue.length * SPAWN_EMA_ALPHA
         }
-        let spawnMetricsTime = Game.time - this.memory.spawnEMA.time
-        let averageSpawnQueueSize = this.memory.spawnEMA.ema;
-        if (spawnMetricsTime > 2000 && spawnMetricsTime % 500 == 0) {
-            if (averageSpawnQueueSize > 0.1) {
-                for (let x of this.memory.carrierProcesses) {
-                    let carrierProcess = (this.kernel.getProcess(x) as CarrierProcess)
-                    carrierProcess.setScale(Math.min(carrierProcess.getAliveScale() + 1,10))
-                }
-            } else if (averageSpawnQueueSize < 0.05) {
-                for (let x of this.memory.carrierProcesses) {
-                    let carrierProcess = (this.kernel.getProcess(x) as CarrierProcess)
-                    carrierProcess.setScale(Math.max(carrierProcess.getAliveScale() - 1,3))
-                }
-            }
-        }
-
         if (Game.time % 5 == 0) {
             let sites = Game.rooms[this.memory.room].find(FIND_CONSTRUCTION_SITES)
             if (sites.length > 0 && (!this.memory.constructionProcess || !this.kernel.getProcess(this.memory.constructionProcess))) {
-                let constructionProcess = new BuilderProcess(this.kernel, this.getPID(), this.getParent(),this.memory.mineRoom)
+                let constructionProcess = new BuilderProcess(this.kernel, this.getPID(), this.getParent(), this.memory.mineRoom)
                 this.kernel.addProcess(constructionProcess)
-                this.memory.constructionProcess =  constructionProcess.getPID()
+                this.memory.constructionProcess = constructionProcess.getPID()
             } else if (sites.length == 0) {
                 this.memory.constructionProcess = undefined
             }
@@ -204,17 +188,17 @@ class RoomManagerProcess extends Process implements SpawnManager {
                 if (wallBuilder || construction) targetEnergyConsumption = energySum / 2
                 if (wallBuilder && construction) targetEnergyConsumption = energySum / 3
                 let upgraderUsagePerPart = upgrader.getAverageEnergyConsumption() / upgrader.getAliveScale()
-                let upgraderDesiredScale = Math.floor(targetEnergyConsumption/ upgraderUsagePerPart);
-                upgrader.setScale(Math.min(Math.max(upgraderDesiredScale,3),40))
-                if(wallBuilder) {
+                let upgraderDesiredScale = Math.floor(targetEnergyConsumption / upgraderUsagePerPart);
+                upgrader.setScale(Math.min(Math.max(upgraderDesiredScale, 3), 40))
+                if (wallBuilder) {
                     let wallBuilderUsagePerPart = wallBuilder.getAverageEnergyConsumption() / wallBuilder.getAliveScale()
-                    let wallBuilderScale = Math.floor(targetEnergyConsumption/ wallBuilderUsagePerPart);
-                    wallBuilder.setScale(Math.min(Math.max(wallBuilderScale, 3),40))
+                    let wallBuilderScale = Math.floor(targetEnergyConsumption / wallBuilderUsagePerPart);
+                    wallBuilder.setScale(Math.min(Math.max(wallBuilderScale, 3), 40))
                 }
-                if(construction) {
+                if (construction) {
                     let constructionUsagePerPart = construction.getAverageEnergyConsumption() / construction.getAliveScale()
-                    let constructionScale = Math.floor(targetEnergyConsumption/ constructionUsagePerPart);
-                    construction.setScale(Math.min(Math.max(constructionScale,3),40))
+                    let constructionScale = Math.floor(targetEnergyConsumption / constructionUsagePerPart);
+                    construction.setScale(Math.min(Math.max(constructionScale, 3), 40))
                 }
             }
         }
@@ -226,16 +210,16 @@ class RoomManagerProcess extends Process implements SpawnManager {
         if (Game.rooms[this.memory.room].find(FIND_HOSTILE_CREEPS).length > 0) {
             let hostileAttackParts = _.sum(Game.rooms[this.memory.room].find(FIND_HOSTILE_CREEPS).map((c) => _.sum(_.filter(c.body, (c) => c.type == ATTACK || c.type == HEAL || c.type == RANGED_ATTACK))))
             if (!this.memory.defender) {
-                let defenseProcess = new AttackCreepProcess(this.kernel, this.getPID(), this.getPID(), Math.max(hostileAttackParts*2, 6), [TOUGH, ATTACK, MOVE], this.memory.room, undefined)
+                let defenseProcess = new AttackCreepProcess(this.kernel, this.getPID(), this.getPID(), Math.max(hostileAttackParts * 2, 6), [TOUGH, ATTACK, MOVE], this.memory.room, undefined)
                 this.memory.defender = defenseProcess.getPID()
                 this.kernel.addProcess(defenseProcess)
-                let healingProcess = new HealingProcess(this.kernel, this.getPID(), this.getPID(), Math.max(hostileAttackParts*2, 6), [TOUGH, HEAL, MOVE], this.memory.room, undefined)
+                let healingProcess = new HealingProcess(this.kernel, this.getPID(), this.getPID(), Math.max(hostileAttackParts * 2, 6), [TOUGH, HEAL, MOVE], this.memory.room, undefined)
                 this.memory.healer = healingProcess.getPID()
                 this.kernel.addProcess(healingProcess)
             }
             let defenseProcess = this.kernel.getProcess(this.memory.defender)! as AttackCreepProcess
-            if (defenseProcess.getScale() < hostileAttackParts*3) {
-                defenseProcess.setScale(hostileAttackParts*3)
+            if (defenseProcess.getScale() < hostileAttackParts * 3) {
+                defenseProcess.setScale(hostileAttackParts * 3)
             }
         } else if (this.memory.defender) {
             this.kernel.getProcess(this.memory.defender)?.shutdown()
@@ -248,7 +232,7 @@ class RoomManagerProcess extends Process implements SpawnManager {
             let container = mineral.pos.findInRange(FIND_STRUCTURES, 1, { filter: (x) => x.structureType == STRUCTURE_CONTAINER })[0] as StructureContainer
             if (container) {
                 let resourceType = mineral.mineralType
-                let mineralHaulerProc = new MineralHauler(this.kernel,this.getPID(),this.memory.room,container,resourceType)
+                let mineralHaulerProc = new MineralHauler(this.kernel, this.getPID(), this.memory.room, container, resourceType)
                 this.memory.mineralHauler = mineralHaulerProc.getPID()
                 this.kernel.addProcess(mineralHaulerProc)
             }
@@ -265,7 +249,7 @@ class RoomManagerProcess extends Process implements SpawnManager {
             let structures = Game.rooms[this.memory.room].find(FIND_STRUCTURES).map(s => s.pos);
             let sources = Game.rooms[this.memory.room].find(FIND_SOURCES).map(s => s.pos);
             let exits = Game.rooms[this.memory.room].find(FIND_EXIT);
-            this.memory.parkingMatrix = floodFill([...structures,...sources,...exits], this.memory.room)
+            this.memory.parkingMatrix = floodFill([...structures, ...sources, ...exits], this.memory.room)
         }
     }
 
