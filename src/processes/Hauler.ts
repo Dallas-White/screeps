@@ -5,8 +5,7 @@ import { ProcessRegistry } from "Process";
 
 export default class Hauler extends CreepProcess {
 
-    constructor(kernel: Kernel, parent: number, spawnManager: number, source: string, destination: string, priority: number, scale: number, resource: ResourceConstant, amount: number | undefined)
-    {
+    constructor(kernel: Kernel, parent: number, spawnManager: number, source: string, destination: string, priority: number, scale: number, resource: ResourceConstant, amount: number | undefined) {
         super(kernel, parent, spawnManager)
         this.memory.source = source;
         this.memory.destination = destination;
@@ -24,7 +23,7 @@ export default class Hauler extends CreepProcess {
             let source = Game.getObjectById(this.memory.source) as Structure
             if (!source) return
             if (source.pos.roomName != c.room.name) {
-                moveToRoom(c,source.pos.roomName);
+                moveToRoom(c, source.pos.roomName);
                 return
             }
             if (c.withdraw(source, this.memory.resource) == ERR_NOT_IN_RANGE) {
@@ -32,9 +31,9 @@ export default class Hauler extends CreepProcess {
             }
         } else {
             let destination = Game.getObjectById(this.memory.destination) as Structure
-            if (!destination) c.drop(RESOURCE_ENERGY);
+            if (!destination) c.drop(this.memory.resource);
             if (destination.pos.roomName != c.room.name) {
-                moveToRoom(c,destination.pos.roomName);
+                moveToRoom(c, destination.pos.roomName);
                 return
             }
             let transfer_result = c.transfer(destination, this.memory.resource)
@@ -43,13 +42,13 @@ export default class Hauler extends CreepProcess {
             } else if (transfer_result == OK) {
                 if (this.memory.amount) {
                     this.memory.amount -= c.store.getFreeCapacity()
-                    if(this.memory.amount <= 0) this.shutdown()
+                    if (this.memory.amount <= 0) this.shutdown()
                 }
             }
         }
     }
 
-    onCreepDeath(): void {}
+    onCreepDeath(): void { }
 
     generateSpawnRequest(): [ratio: BodyPartConstant[], targetScale: number, baseparts: (BodyPartConstant[] | undefined), maxCreeps: (number | undefined)] {
         return [[MOVE, CARRY, CARRY], this.memory.scale, [], undefined]
@@ -61,4 +60,4 @@ export default class Hauler extends CreepProcess {
 
 }
 
-ProcessRegistry.register("Hauler",Hauler)
+ProcessRegistry.register("Hauler", Hauler)

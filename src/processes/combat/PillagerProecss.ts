@@ -1,0 +1,70 @@
+import { open } from "fs";
+import Kernel from "Kernel";
+import { ProcessRegistry } from "Process";
+import CreepProcess from "processes/CreepProcess";
+import { moveToRoom } from "utils/creepUtils";
+import { EnergyConsumer, EnergyProducer } from "utils/EnergyBalance";
+
+export default class PillagerProcess extends CreepProcess {
+
+    constructor(kernel: Kernel, parent: number, spawnManager: number, source: string, destination: string, scale: number) {
+        super(kernel, parent, spawnManager)
+        this.memory.source = source;
+        this.memory.destination = destination;
+        this.memory.scale = scale
+    }
+    getSpawningPriority(): number {
+        return 0;
+    }
+    runCreep(c: Creep, creepMemory: any): void {
+        if (!creepMemory.state) creepMemory.state = c.store.getFreeCapacity() == 0 ? "depositing" : "fetching";
+        if (creepMemory.state == "depositing") {
+            if (c.room.name != this.memory.destination || c.pos.x == 49 || c.pos.x == 0 || c.pos.y == 49 || c.pos.y == 0) {
+                c.moveTo(new RoomPosition(25, 25, this.memory.destination));
+            } else {
+                let openStorage = c.pos.findClosestByRange(FIND_STRUCTURES, { filter: (s => (s.structureType == STRUCTURE_CONTAINER || s.structureType == STRUCTURE_STORAGE) && s.store.getFreeCapacity() > 0) })
+                if (!openStorage) {
+                    for (var resource of RESOURCES_ALL) {
+                        if (c.store.getUsedCapacity(resource) > 0) {
+                            c.drop(resource)
+                        }
+                    }
+                } else {
+                    for (var resource of RESOURCES_ALL) {
+                        if (c.store.getUsedCapacity(resource) > 0) {
+                            let depositResult = c.transfer(openStorage, resource);
+                            if (depositResult == ERR_NOT_IN_RANGE) {
+                                c.moveTo(openStorage);
+                                return;
+                            }
+                        }
+                    }
+                }
+            }
+            if (c.store.getUsedCapacity() == 0) creepMemory.state = "fetching"
+        } else {
+            if (c.room.name != this.memory.source) {
+                moveToRoom(c, this.memory.source)
+            } else {
+                let source = c.pos.findClosestByRange(FIND_DROPPED_RESOURCES)
+                if (!source) {
+                    this.sleep(5)
+                    return;
+                }
+                let result = c.pickup(source);
+                if (result == ERR_NOT_IN_RANGE) c.moveTo(source);
+                if (c.store.getFreeCapacity() == 0) creepMemory.state = "depositing"
+            }
+        }
+    }
+    onCreepDeath(): void { }
+    generateSpawnRequest(): [ratio: BodyPartConstant[], targetScale: number, baseparts: (BodyPartConstant[] | undefined), maxCreeps: (number | undefined)] {
+        return [[MOVE, CARRY, CARRY], this.memory.scale, [], undefined]
+    }
+    getType(): string {
+        return "PillagerProcess"
+    }
+
+
+}
+ProcessRegistry.register("PillagerProcess", PillagerProcess)

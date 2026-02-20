@@ -153,8 +153,8 @@ class RoomManagerProcess extends Process implements SpawnManager {
             }
         }
         let energySum = 0;
-        if (Game.time % 100 == 0) {
-            if (!this.memory.linkProcess && Game.rooms[this.memory.room].find(FIND_MY_STRUCTURES, { filter: (s) => s.structureType == STRUCTURE_LINK })) {
+        if (Game.time % 1000 == 0) {
+            if (!this.memory.linkProcess && Game.rooms[this.memory.room].find(FIND_MY_STRUCTURES, { filter: (s) => s.structureType == STRUCTURE_LINK }).length > 0) {
                 let linkProcess = new LinkManager(this.kernel, this.getPID(), this.memory.room)
                 this.kernel.addProcess(linkProcess)
                 this.memory.linkProcess = linkProcess.getPID()
@@ -202,7 +202,7 @@ class RoomManagerProcess extends Process implements SpawnManager {
                 }
             }
         }
-        if (Game.rooms[this.memory.room].find(FIND_MY_CREEPS).length == 0 && (!this.memory.bootstrapProcess || !this.kernel.getProcess(this.memory.bootstrapProcess)) && Game.rooms[this.memory.room].controller!.level > 1) {
+        if (Game.time % 50 == 0 && Game.rooms[this.memory.room].find(FIND_MY_CREEPS).length == 0 && (!this.memory.bootstrapProcess || !this.kernel.getProcess(this.memory.bootstrapProcess)) && Game.rooms[this.memory.room].controller!.level > 1) {
             let bootstrapProcess = new RoomBootstrapProcess(this.kernel, this.getPID(), this.memory.room)
             this.kernel.addProcess(bootstrapProcess)
             this.memory.bootstrapProcess = bootstrapProcess.getPID()

@@ -27,7 +27,7 @@ declare global {
     processes: Record<number, SerializedProcess>;
     pid_counter: number,
     profilingData: { [processName: string]: { lastRan: number, averageCPU: number } }
-    attacks: { [roomName: string]: Attack}
+    attacks: { [roomName: string]: Attack }
 
   }
   interface FlagMemory {
@@ -79,32 +79,32 @@ declare global {
 // This utility uses source maps to get the line numbers and file names of the original, TS source code
 export const loop = ErrorMapper.wrapLoop(() => {
 
-    global.remoteMine = function (parentRoom: string, childRoom: string) {
-      let kernel = new Kernel();
-      kernel.deserializeProcesses();
-      let parentRoomManager = kernel.getProcess((kernel.getProcess(0)! as init).getRoomManager(parentRoom)!)!
-      kernel.addProcess(new RemoteMiner(kernel, parentRoomManager.getPID(), parentRoom, childRoom))
-      kernel.serializeProcesses()
-    }
+  global.remoteMine = function (parentRoom: string, childRoom: string) {
+    let kernel = new Kernel();
+    kernel.deserializeProcesses();
+    let parentRoomManager = kernel.getProcess((kernel.getProcess(0)! as init).getRoomManager(parentRoom)!)!
+    kernel.addProcess(new RemoteMiner(kernel, parentRoomManager.getPID(), parentRoom, childRoom))
+    kernel.serializeProcesses()
+  }
 
-    global.attack = function (roomName: string, attack: number, heal: number) {
-      let kernel = new Kernel();
-      kernel.deserializeProcesses()
-      if (!Memory.attacks) Memory.attacks = {}
-        if (Memory.attacks[roomName]) {
-            (kernel.getProcess(Memory.attacks[roomName].attackProcess) as AttackCreepProcess).setScale(attack);
-            (kernel.getProcess(Memory.attacks[roomName].healerProcess) as HealingProcess).setScale(heal)
-      } else {
-        let attackProc = new AttackCreepProcess(kernel, 0, 0, attack, [TOUGH, TOUGH, ATTACK, MOVE, MOVE, MOVE], roomName, undefined)
-        kernel.addProcess(attackProc)
-        let healerProcess = new HealingProcess(kernel, 0, 0, heal, [TOUGH, TOUGH, HEAL, MOVE, MOVE, MOVE], roomName, undefined)
-        kernel.addProcess(healerProcess)
-        Memory.attacks[roomName] = {attackProcess: attackProc.getPID(), healerProcess: healerProcess.getPID()}
-        }
-      kernel.serializeProcesses()
+  global.attack = function (roomName: string, attack: number, heal: number) {
+    let kernel = new Kernel();
+    kernel.deserializeProcesses()
+    if (!Memory.attacks) Memory.attacks = {}
+    if (Memory.attacks[roomName]) {
+      (kernel.getProcess(Memory.attacks[roomName].attackProcess) as AttackCreepProcess).setScale(attack);
+      (kernel.getProcess(Memory.attacks[roomName].healerProcess) as HealingProcess).setScale(heal)
+    } else {
+      let attackProc = new AttackCreepProcess(kernel, 0, 0, attack, [TOUGH, TOUGH, ATTACK, MOVE, MOVE, MOVE], roomName, undefined)
+      kernel.addProcess(attackProc)
+      let healerProcess = new HealingProcess(kernel, 0, 0, heal, [TOUGH, TOUGH, HEAL, MOVE, MOVE, MOVE], roomName, undefined)
+      kernel.addProcess(healerProcess)
+      Memory.attacks[roomName] = { attackProcess: attackProc.getPID(), healerProcess: healerProcess.getPID() }
     }
+    kernel.serializeProcesses()
+  }
   global.stopAttack = function (roomName: string) {
-    if(!Memory.attacks[roomName]) throw new Error("No Room Is Being Attacked")
+    if (!Memory.attacks[roomName]) throw new Error("No Room Is Being Attacked")
     let kernel = new Kernel()
     kernel.deserializeProcesses()
     console.log(kernel.getProcess(Memory.attacks[roomName].attackProcess))
@@ -119,8 +119,8 @@ export const loop = ErrorMapper.wrapLoop(() => {
       if (Memory.profilingData[x].lastRan < Game.time) {
         Memory.profilingData[x].averageCPU =
           Memory.profilingData[x].averageCPU *
-          ((1-PROFILER_ALPHA) ** (Game.time - Memory.profilingData[x].lastRan))
-          Memory.profilingData[x].lastRan = Game.time
+          ((1 - PROFILER_ALPHA) ** (Game.time - Memory.profilingData[x].lastRan))
+        Memory.profilingData[x].lastRan = Game.time
       }
       profilingData.push({ name: x, usage: Memory.profilingData[x].averageCPU })
     }
