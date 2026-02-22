@@ -16,7 +16,7 @@ abstract class CreepProcess extends Process implements SpawnCallback, EnergyCons
     }
 
     resetEnergyConsumption(): void {
-        this.memory.__energyConsumption = {timeStart: Game.time, energy: 0, lastCall: Game.time}
+        this.memory.__energyConsumption = { timeStart: Game.time, energy: 0, lastCall: Game.time }
     }
 
 
@@ -42,13 +42,13 @@ abstract class CreepProcess extends Process implements SpawnCallback, EnergyCons
         if (this.buffer > 1000) {
             console.log("WARNING: Energy for " + this.getPID() + " is " + this.buffer)
         }
-        if(!this.memory.__energyConsumption.energy) this.resetEnergyConsumption()
+        if (!this.memory.__energyConsumption.energy) this.resetEnergyConsumption()
         while (this.memory.__energyConsumption.lastCall < Game.time) {
             this.memory.__energyConsumption.lastCall = this.memory.__energyConsumption.lastCall + 1
             this.memory.__energyConsumption.energy = this.memory.__energyConsumption.energy * (1 - ENERGY_CONSUMPTION_ALPHA)
         }
-       this.memory.__energyConsumption.energy = this.memory.__energyConsumption.energy + this.buffer * ENERGY_CONSUMPTION_ALPHA
-       this.buffer = 0
+        this.memory.__energyConsumption.energy = this.memory.__energyConsumption.energy + this.buffer * ENERGY_CONSUMPTION_ALPHA
+        this.buffer = 0
     }
 
 
@@ -62,13 +62,13 @@ abstract class CreepProcess extends Process implements SpawnCallback, EnergyCons
         this.sleepUntil = 0;
     }
 
-    getAliveScale():number {
+    getAliveScale(): number {
         return _.sum(_.map(this.memory.__creeps, (c: any) => c.ratioCount))
     }
 
     orderCreepParts(body: BodyPartConstant[]): BodyPartConstant[] {
         return body.sort((a: BodyPartConstant, b: BodyPartConstant): number => {
-            if(a == TOUGH && b != TOUGH) return -1
+            if (a == TOUGH && b != TOUGH) return -1
             if (b == TOUGH && a != TOUGH) return 1
             return 0
         })
@@ -99,7 +99,7 @@ abstract class CreepProcess extends Process implements SpawnCallback, EnergyCons
         let [ratio, targetScale, baseparts, maxCreeps] = this.generateSpawnRequest()
         let aliveRatio = 0
         this.memory.__creeps = _.filter(this.memory.__creeps, (c: any) => c.name in Game.creeps)
-        for (let x = 0; x < this.memory.__creeps.length ; x++) {
+        for (let x = 0; x < this.memory.__creeps.length; x++) {
             let creepObject = this.memory.__creeps[x]
             aliveRatio += creepObject.ratioCount;
             if (!Game.creeps[creepObject.name].spawning) {
@@ -110,13 +110,13 @@ abstract class CreepProcess extends Process implements SpawnCallback, EnergyCons
             (this.kernel.getProcess(this.memory.spawnManager)! as unknown as SpawnManager).cancelSpawn(this.getPID())
             this.memory.__spawningRatio = 0
         }
-        if(this.memory.__spawningRatio && this.memory.__spawningRatio > 0) aliveRatio += this.memory.__spawningRatio;
+        if (this.memory.__spawningRatio && this.memory.__spawningRatio > 0) aliveRatio += this.memory.__spawningRatio;
         if (aliveRatio < targetScale && (!maxCreeps || maxCreeps > this.memory.__creeps.length)) {
             let maxEnergyPerCreep = (this.kernel.getProcess(this.memory.spawnManager)! as unknown as SpawnManager).getMaxEnergy()
-            let creepBodys = this.generateNeededCreeps(baseparts? baseparts : [], ratio, targetScale, aliveRatio, maxEnergyPerCreep, maxCreeps? (maxCreeps - this.memory.__creeps.length): undefined)
+            let creepBodys = this.generateNeededCreeps(baseparts ? baseparts : [], ratio, targetScale, aliveRatio, maxEnergyPerCreep, maxCreeps ? (maxCreeps - this.memory.__creeps.length) : undefined)
 
             for (let creep of creepBodys) {
-                (this.kernel.getProcess(this.memory.spawnManager)! as unknown as SpawnManager).addToQueue(creep[0],this.getSpawningPriority(),this,{scale: creep[1]})
+                (this.kernel.getProcess(this.memory.spawnManager)! as unknown as SpawnManager).addToQueue(creep[0], this.getSpawningPriority(), this.memory.room, this, { scale: creep[1] })
                 this.logEnergyConsumption(_.sum(_.map(creep[0], (part) => BODYPART_COST[part])))
                 this.memory.__spawningRatio += creep[1]
             }
@@ -125,32 +125,32 @@ abstract class CreepProcess extends Process implements SpawnCallback, EnergyCons
     }
 
     generateNeededCreeps(baseparts: BodyPartConstant[], ratio: BodyPartConstant[], targetScale: number, currentScale: number, maxEnergy: number, maxNewCreeps: number | undefined): [BodyPartConstant[], number][] {
-            let ratioCost = _.sum(_.map(ratio, (part) => BODYPART_COST[part]))
-            let baseCost = _.sum(_.map(baseparts, (part) => BODYPART_COST[part]))
-            let creeps: [BodyPartConstant[], number][] = []
-            let hadScale = 0
-            let neededScale = targetScale - currentScale
-            while (hadScale < neededScale) {
-                let usedEnergy = baseCost
-                let creepBody: BodyPartConstant[] = []
-                if (baseparts) {
-                    creepBody = creepBody.concat(baseparts)
-                }
-                let thisCreepScale = 0
-                while (usedEnergy + ratioCost <= maxEnergy && thisCreepScale < targetScale && creepBody.length + ratio.length <= 50) {
-                    creepBody = creepBody.concat(ratio)
-                    usedEnergy += ratioCost
-                    hadScale++;
-                    thisCreepScale++;
-                }
-                if (usedEnergy == 0) {
-                    break;
-                }
-                creeps.push([this.orderCreepParts(creepBody), thisCreepScale])
-                if (maxNewCreeps && creeps.length >= maxNewCreeps) {
-                    break
-                }
+        let ratioCost = _.sum(_.map(ratio, (part) => BODYPART_COST[part]))
+        let baseCost = _.sum(_.map(baseparts, (part) => BODYPART_COST[part]))
+        let creeps: [BodyPartConstant[], number][] = []
+        let hadScale = 0
+        let neededScale = targetScale - currentScale
+        while (hadScale < neededScale) {
+            let usedEnergy = baseCost
+            let creepBody: BodyPartConstant[] = []
+            if (baseparts) {
+                creepBody = creepBody.concat(baseparts)
             }
+            let thisCreepScale = 0
+            while (usedEnergy + ratioCost <= maxEnergy && thisCreepScale < targetScale && creepBody.length + ratio.length <= 50) {
+                creepBody = creepBody.concat(ratio)
+                usedEnergy += ratioCost
+                hadScale++;
+                thisCreepScale++;
+            }
+            if (usedEnergy == 0) {
+                break;
+            }
+            creeps.push([this.orderCreepParts(creepBody), thisCreepScale])
+            if (maxNewCreeps && creeps.length >= maxNewCreeps) {
+                break
+            }
+        }
         return creeps;
     }
 
@@ -165,7 +165,7 @@ abstract class CreepProcess extends Process implements SpawnCallback, EnergyCons
         let energyPerRatio = _.sum(_.map(ratio, (filter) => BODYPART_COST[filter]))
         let scale = 0;
         let reuturnedBody: BodyPartConstant[] = []
-        while(true) {
+        while (true) {
             totalEnergy += energyPerRatio
             for (let x of ratio) {
                 reuturnedBody.push(x)

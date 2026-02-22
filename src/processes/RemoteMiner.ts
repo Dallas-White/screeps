@@ -8,6 +8,7 @@ import HarvesterProcess from "./HarvesterProcess";
 import RepairerProcess from "./RepairerProcess";
 import Hauler from "./Hauler";
 import AttackCreepProcess from "./combat/AttackCreepProcess";
+import PillagerProcess from "./combat/PillagerProecss";
 
 export default class RemoteMiner extends Process implements EnergyConsumer, EnergyProducer {
 
@@ -70,7 +71,7 @@ export default class RemoteMiner extends Process implements EnergyConsumer, Ener
         if (!Game.rooms[this.memory.mineRoom]) return
         if (!this.memory.harvesters) {
             for (let source of Game.rooms[this.memory.mineRoom].find(FIND_SOURCES)) {
-                this.kernel.addProcess(new HarvesterProcess(this.kernel, this.getPID(), this.getParent(),source))
+                this.kernel.addProcess(new HarvesterProcess(this.kernel, this.getPID(), this.getParent(), source))
             }
             this.memory.harvesters = true
         }
@@ -79,7 +80,7 @@ export default class RemoteMiner extends Process implements EnergyConsumer, Ener
             let failed = false
             let controller_path = PathFinder.search(Game.rooms[this.memory.mineRoom].controller!.pos, exit)
             for (let p of controller_path.path) {
-                if(Game.rooms[this.memory.mineRoom].createConstructionSite(p.x, p.y, STRUCTURE_ROAD) == ERR_FULL) failed = true
+                if (Game.rooms[this.memory.mineRoom].createConstructionSite(p.x, p.y, STRUCTURE_ROAD) == ERR_FULL) failed = true
             }
             for (let source of Game.rooms[this.memory.mineRoom].find(FIND_SOURCES)) {
                 let path = PathFinder.search(source.pos, exit);
@@ -99,9 +100,13 @@ export default class RemoteMiner extends Process implements EnergyConsumer, Ener
                 this.sleep(1000)
                 return
             }
+        }
+        if (!this.memory.built && (!this.memory.builderProc || !this.kernel.getProcess(this.memory.builderProc))) {
+
             let constructionProcess = new BuilderProcess(this.kernel, this.getPID(), this.getParent(), this.memory.mineRoom)
             this.kernel.addProcess(constructionProcess)
-            this.memory.planned = true
+            this.memory.planned = true;
+            this.memory.builderProc = constructionProcess.getPID()
         }
         if (!this.memory.repair) {
             let repairProc = new RepairerProcess(this.kernel, this.getPID(), this.getParent(), this.memory.mineRoom)
@@ -109,23 +114,23 @@ export default class RemoteMiner extends Process implements EnergyConsumer, Ener
             this.memory.repair = repairProc
         }
         if (!this.memory.haulersSpawned && Game.rooms[this.memory.mineRoom].find(FIND_CONSTRUCTION_SITES).length == 0) {
+            this.memory.built = true;
             let containers = Game.rooms[this.memory.mineRoom].find(FIND_STRUCTURES, { filter: (s) => s.structureType == STRUCTURE_CONTAINER })
             for (let container of containers) {
-                this.kernel.addProcess(new Hauler(this.kernel, this.getPID(), this.getParent(),
-                    container.id, Game.rooms[this.memory.parentRoom].storage!.id, 0, 3, RESOURCE_ENERGY, undefined))
+                this.kernel.addProcess(new PillagerProcess(this.kernel, this.getPID(), this.getParent(), this.memory.mineRoom, this.memory.parentRoom, 7));
             }
             this.memory.haulersSpawned = true
         }
         if (Game.rooms[this.memory.mineRoom].find(FIND_HOSTILE_CREEPS).length > 0 || Game.rooms[this.memory.mineRoom].find(FIND_HOSTILE_STRUCTURES).length > 0) {
             let hostileAttackParts = _.sum(Game.rooms[this.memory.mineRoom].find(FIND_HOSTILE_CREEPS).map((c) => _.sum(_.filter(c.body, (c) => c.type == ATTACK || c.type == HEAL || c.type == RANGED_ATTACK))))
             if (!this.memory.defender) {
-                let defenseProcess = new AttackCreepProcess(this.kernel, this.getPID(), this.getParent(), Math.max(hostileAttackParts*2, 6), [TOUGH, ATTACK, MOVE], this.memory.mineRoom, undefined)
+                let defenseProcess = new AttackCreepProcess(this.kernel, this.getPID(), this.getParent(), Math.max(hostileAttackParts * 2, 6), [TOUGH, ATTACK, MOVE], this.memory.mineRoom, undefined)
                 this.memory.defender = defenseProcess.getPID()
                 this.kernel.addProcess(defenseProcess)
             }
             let defenseProcess = this.kernel.getProcess(this.memory.defender)! as AttackCreepProcess
-            if (defenseProcess.getScale() < hostileAttackParts*3) {
-                defenseProcess.setScale(hostileAttackParts*3)
+            if (defenseProcess.getScale() < hostileAttackParts * 3) {
+                defenseProcess.setScale(hostileAttackParts * 3)
             }
         } else if (this.memory.defender) {
             this.memory.defender = undefined

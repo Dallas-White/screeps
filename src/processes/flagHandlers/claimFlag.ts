@@ -1,8 +1,9 @@
 import Kernel from "Kernel";
 import Process, { ProcessRegistry } from "Process";
 import CreepProcess from "processes/CreepProcess";
+import { moveToRoom } from "utils/creepUtils";
 
-export default class ClaimProcess extends CreepProcess{
+export default class ClaimProcess extends CreepProcess {
     constructor(kernel: Kernel, parent: number, spawnManager: number, flag: Flag) {
         super(kernel, parent, spawnManager)
         this.memory.room = flag.pos.roomName
@@ -16,7 +17,7 @@ export default class ClaimProcess extends CreepProcess{
             return
         }
         if (c.room.name != this.memory.room) {
-            c.moveTo(new RoomPosition(25, 25, this.memory.room))
+            moveToRoom(c, this.memory.room);
         } else {
             let claimResult = c.claimController(c.room.controller!)
             if (claimResult == OK) {
@@ -28,7 +29,7 @@ export default class ClaimProcess extends CreepProcess{
             }
         }
     }
-    onCreepDeath(): void {}
+    onCreepDeath(): void { }
 
     generateSpawnRequest(): [ratio: BodyPartConstant[], targetScale: number, baseparts: (BodyPartConstant[] | undefined), maxCreeps: (number | undefined)] {
         if (this.memory.room in Game.rooms && Game.rooms[this.memory.room].controller?.my) {

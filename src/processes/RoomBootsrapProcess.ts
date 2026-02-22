@@ -2,6 +2,7 @@ import Kernel from "Kernel";
 import Process, { ProcessRegistry } from "../Process";
 import CreepProcess from "./CreepProcess";
 import RoomManagerProcess from "./RoomManagerProcess";
+import { moveToRoom } from "utils/creepUtils";
 
 export class RoomBootstrapProcess extends CreepProcess {
 
@@ -18,14 +19,14 @@ export class RoomBootstrapProcess extends CreepProcess {
         super(kernel, parent, parent)
         this.memory.roomName = roomName;
     }
-    runCreep(c: Creep): void {
+    runCreep(c: Creep, creepMemory: any): void {
         if (!this.memory.room) this.memory.room = (this.kernel.getProcess(this.getParent()) as RoomManagerProcess).getRoomName()
         if (c.room.name != this.memory.room) {
-            c.moveTo(new RoomPosition(25, 25, this.memory.room))
+            moveToRoom(c, this.memory.roomName)
             return
         }
-        if (!this.memory.state) this.memory.state = "mining";
-        if (this.memory.state == "mining") {
+        if (!creepMemory.state) creepMemory.state = "mining";
+        if (creepMemory.state == "mining") {
             if (!this.memory.source) {
                 this.memory.source = c.pos.findClosestByRange(FIND_SOURCES)!.id
             }
@@ -63,11 +64,11 @@ export class RoomBootstrapProcess extends CreepProcess {
                 if (miningResult == ERR_NOT_IN_RANGE) c.moveTo(Game.getObjectById(this.memory.source) as Source)
             }
             if (c.store.getFreeCapacity() == 0) {
-                this.memory.state = "supplying"
+                creepMemory.state = "supplying"
             }
 
 
-        } else if (this.memory.state == "supplying") {
+        } else if (creepMemory.state == "supplying") {
             let transferTarget = c.pos.findClosestByRange(FIND_MY_STRUCTURES, { filter: (struct) => (struct.structureType == STRUCTURE_SPAWN || struct.structureType == STRUCTURE_EXTENSION) && struct.store.getFreeCapacity(RESOURCE_ENERGY) > 0 });
             if (!transferTarget) {
                 let buildTarget = c.pos.findClosestByRange(FIND_CONSTRUCTION_SITES);
@@ -87,15 +88,14 @@ export class RoomBootstrapProcess extends CreepProcess {
             } else if (transferResult == ERR_FULL) {
                 this.shutdown()
             } else if (transferResult == 0) {
-                this.memory.state = "mining"
+                creepMemory.state = "mining"
             } else {
-                this.memory.state = "mining"
+                creepMemory.state = "mining"
             }
         }
     }
 
     onCreepDeath(): void {
-        this.memory.state == "mining"
     }
 
 

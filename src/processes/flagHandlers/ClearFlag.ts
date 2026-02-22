@@ -17,7 +17,7 @@ export default class ClearFlag extends CreepProcess {
             return;
         }
         if (!creepMemory.target || !Game.getObjectById(creepMemory.target)) {
-            let closestTarget = c.pos.findClosestByRange(FIND_STRUCTURES) as _HasId;
+            let closestTarget = c.pos.findClosestByRange(FIND_STRUCTURES, { filter: (s) => s.structureType != STRUCTURE_CONTROLLER }) as _HasId;
             if (!closestTarget) this.shutdown()
             creepMemory.target = closestTarget.id;
         }
@@ -25,6 +25,8 @@ export default class ClearFlag extends CreepProcess {
         let dismantleResult = c.dismantle(target)
         if (dismantleResult == ERR_NOT_IN_RANGE) {
             c.moveTo(target)
+        } else if (dismantleResult != OK) {
+            creepMemory.target = undefined
         }
 
     }

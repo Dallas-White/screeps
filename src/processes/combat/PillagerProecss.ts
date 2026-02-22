@@ -20,7 +20,7 @@ export default class PillagerProcess extends CreepProcess {
         if (!creepMemory.state) creepMemory.state = c.store.getFreeCapacity() == 0 ? "depositing" : "fetching";
         if (creepMemory.state == "depositing") {
             if (c.room.name != this.memory.destination || c.pos.x == 49 || c.pos.x == 0 || c.pos.y == 49 || c.pos.y == 0) {
-                c.moveTo(new RoomPosition(25, 25, this.memory.destination));
+                moveToRoom(c, this.memory.destination)
             } else {
                 let openStorage = c.pos.findClosestByRange(FIND_STRUCTURES, { filter: (s => (s.structureType == STRUCTURE_CONTAINER || s.structureType == STRUCTURE_STORAGE) && s.store.getFreeCapacity() > 0) })
                 if (!openStorage) {
@@ -46,9 +46,24 @@ export default class PillagerProcess extends CreepProcess {
             if (c.room.name != this.memory.source) {
                 moveToRoom(c, this.memory.source)
             } else {
+
+                if (c.store.getFreeCapacity() == 0) creepMemory.state = "depositing"
                 let source = c.pos.findClosestByRange(FIND_DROPPED_RESOURCES)
                 if (!source) {
-                    this.sleep(5)
+                    let container: StructureContainer = c.pos.findClosestByRange(FIND_STRUCTURES, { filter: (s) => s.structureType == STRUCTURE_CONTAINER && (s as StructureContainer).store.getUsedCapacity() > 0 })!
+                    if (!container) {
+                        this.sleep(5);
+                        return;
+                    }
+
+                    for (var resource of RESOURCES_ALL) {
+                        if (container.store[resource] > 0) {
+                            if (c.withdraw(container, resource) == ERR_NOT_IN_RANGE) {
+                                c.moveTo(container);
+                            }
+                            return;
+                        }
+                    }
                     return;
                 }
                 let result = c.pickup(source);

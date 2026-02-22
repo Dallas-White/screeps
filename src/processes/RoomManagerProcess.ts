@@ -58,9 +58,9 @@ class RoomManagerProcess extends Process implements SpawnManager {
         return false;
     }
 
-    addToQueue(body: BodyPartConstant[], priority: number, spawnCallback: SpawnCallback, callbackValues: any): boolean {
+    addToQueue(body: BodyPartConstant[], priority: number, targetRoom: string | undefined, spawnCallback: SpawnCallback, callbackValues: any): boolean {
         if (Game.rooms[this.memory.room].energyCapacityAvailable == 0) {
-            return (this.kernel.getProcess(this.getParent()) as init).addToQueue(body, priority, spawnCallback, callbackValues)
+            return (this.kernel.getProcess(this.getParent()) as init).addToQueue(body, priority, this.memory.room, spawnCallback, callbackValues)
         }
         this.memory.spawnQueue.push({ body: body, priority: priority, pid: spawnCallback.getPID(), callbackValues: callbackValues })
         this.memory.spawnQueue.sort((a: any, b: any) => (a.priority > b.priority ? -1 : 1))

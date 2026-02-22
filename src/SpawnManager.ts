@@ -1,6 +1,6 @@
 interface SpawnManager {
     getMaxEnergy(): number;
-    addToQueue(body: BodyPartConstant[], priority: number, spawnCallback: SpawnCallback, callbackValues: any): boolean;
+    addToQueue(body: BodyPartConstant[], priority: number, targetRoom: string | undefined, spawnCallback: SpawnCallback, callbackValues: any): boolean;
     cancelSpawn(pid: number): void
 }
 

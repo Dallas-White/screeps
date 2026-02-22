@@ -9,7 +9,7 @@ export default class WallBuilderProcess extends EnergyCreepProcess {
         return [[MOVE, WORK, CARRY], this.memory.scale, [], undefined]
     }
     constructor(kernel: Kernel, parent: number, roomManager: number) {
-        super(kernel,parent,roomManager, (kernel.getProcess(parent) as RoomManagerProcess).getRoomName())
+        super(kernel, parent, roomManager, (kernel.getProcess(parent) as RoomManagerProcess).getRoomName())
         this.memory.scale = 3
     }
 
@@ -18,7 +18,8 @@ export default class WallBuilderProcess extends EnergyCreepProcess {
             creep.moveTo(target as Structure)
             return actResult.CONTINUE
         }
-        return actResult.SELECTNEW
+        if (Game.time % 20 == 0) return actResult.SELECTNEW
+        return actResult.CONTINUE;
     }
     getScale(): number {
         return this.memory.scale
@@ -32,7 +33,7 @@ export default class WallBuilderProcess extends EnergyCreepProcess {
     }
 
     selectTarget(pos: RoomPosition): _HasId | null {
-        let damagedDefenses = Game.rooms[pos.roomName].find(FIND_STRUCTURES, {filter: (struct) => (struct.structureType == STRUCTURE_WALL || struct.structureType == STRUCTURE_RAMPART) && struct.hits < struct.hitsMax })
+        let damagedDefenses = Game.rooms[pos.roomName].find(FIND_STRUCTURES, { filter: (struct) => (struct.structureType == STRUCTURE_WALL || struct.structureType == STRUCTURE_RAMPART) && struct.hits < struct.hitsMax })
         if (damagedDefenses.length == 0) return null;
         damagedDefenses.sort((a: AnyStructure, b: AnyStructure): number => {
             return (a.hits - b.hits) * 0.01 + (pos.getRangeTo(a) - pos.getRangeTo(b)) * 0.99;
@@ -50,4 +51,4 @@ export default class WallBuilderProcess extends EnergyCreepProcess {
 
 }
 
-ProcessRegistry.register("WallBuilderProcess",WallBuilderProcess)
+ProcessRegistry.register("WallBuilderProcess", WallBuilderProcess)
