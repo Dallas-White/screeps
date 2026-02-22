@@ -5,11 +5,11 @@ import EnergyCreepProcess, { actResult } from "./EnergyCreepProcess";
 import { Position } from "source-map";
 import { max } from "lodash";
 
-const CONSTRUCTION_SITE_PRIORITES: Array<StructureConstant> = [STRUCTURE_SPAWN,STRUCTURE_EXTENSION, STRUCTURE_CONTAINER, STRUCTURE_WALL, STRUCTURE_RAMPART]
-export default class BuilderProcess extends EnergyCreepProcess{
+const CONSTRUCTION_SITE_PRIORITES: Array<StructureConstant> = [STRUCTURE_SPAWN, STRUCTURE_EXTENSION, STRUCTURE_CONTAINER, STRUCTURE_WALL, STRUCTURE_RAMPART]
+export default class BuilderProcess extends EnergyCreepProcess {
 
     generateSpawnRequest(): [ratio: BodyPartConstant[], targetScale: number, baseparts: (BodyPartConstant[] | undefined), maxCreeps: (number | undefined)] {
-        return [[MOVE, WORK, CARRY], this.memory.scale, [],undefined]
+        return [[MOVE, WORK, CARRY], this.memory.scale, [], undefined]
     }
 
     killOnNoTarget(): boolean {
@@ -34,6 +34,7 @@ export default class BuilderProcess extends EnergyCreepProcess{
 
     setScale(n: number) {
         this.memory.scale = n
+        this.checkSpawning();
     }
 
 
@@ -41,11 +42,11 @@ export default class BuilderProcess extends EnergyCreepProcess{
         super(kernel, parent, spawnManager, roomName)
         this.memory.scale = 5
     }
-    act(creep: Creep, target: ConstructionSite): actResult  {
+    act(creep: Creep, target: ConstructionSite): actResult {
         if (creep.build(target) == ERR_NOT_IN_RANGE) {
             creep.moveTo(target)
             return actResult.CONTINUE;
-        } else if(creep.build(target) != OK) {
+        } else if (creep.build(target) != OK) {
             return actResult.SELECTNEW;
         }
         return actResult.CONTINUE

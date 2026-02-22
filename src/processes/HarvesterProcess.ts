@@ -83,12 +83,14 @@ export default class HarvesterProcess extends CreepProcess implements EnergyProd
         let container = (Game.getObjectById(this.memory.source) as Source).pos.findInRange(FIND_STRUCTURES, 1, { filter: (x) => x.structureType == STRUCTURE_CONTAINER })
         if (container.length != 0) {
             this.memory.container = container[0].pos
+            this.checkSpawning()
         } else {
             this.memory.container = undefined
         }
         let link = (Game.getObjectById(this.memory.source) as Source).pos.findInRange(FIND_STRUCTURES, 2, { filter: (x) => x.structureType == STRUCTURE_LINK })
         if (link.length != 0) {
             this.memory.link = link[0].id
+            this.checkSpawning()
         } else {
             this.memory.link = undefined
         }

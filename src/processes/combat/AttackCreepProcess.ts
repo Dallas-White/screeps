@@ -15,6 +15,7 @@ export default class AttackCreepProcess extends CreepProcess {
     }
     setScale(scale: number) {
         this.memory.scale = scale
+        this.checkSpawning()
     }
 
     getScale(): number {
@@ -39,15 +40,15 @@ export default class AttackCreepProcess extends CreepProcess {
                 this.memory.object == null
             }
             target = c.pos.findClosestByPath(FIND_HOSTILE_CREEPS)
-            if(!target) target = c.pos.findClosestByPath(FIND_HOSTILE_STRUCTURES)
+            if (!target) target = c.pos.findClosestByPath(FIND_HOSTILE_STRUCTURES)
         }
-        if (!target)  return
+        if (!target) return
         if (c.attack(target as AnyCreep | Structure) == ERR_NOT_IN_RANGE) {
             c.moveTo(target)
         }
     }
 
-    onCreepDeath(): void {}
+    onCreepDeath(): void { }
     generateSpawnRequest(): [ratio: BodyPartConstant[], targetScale: number, baseparts: (BodyPartConstant[] | undefined), maxCreeps: (number | undefined)] {
         return [this.memory.ratio, this.memory.scale, [], undefined]
     }
@@ -57,4 +58,4 @@ export default class AttackCreepProcess extends CreepProcess {
 
 }
 
-ProcessRegistry.register("AttackCreep",AttackCreepProcess)
+ProcessRegistry.register("AttackCreep", AttackCreepProcess)

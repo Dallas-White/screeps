@@ -16,8 +16,9 @@ export default class RepairerProcess extends EnergyCreepProcess {
     generateSpawnRequest(): [ratio: BodyPartConstant[], targetScale: number, baseparts: (BodyPartConstant[] | undefined), maxCreeps: (number | undefined)] {
         if (!this.memory.estimatedEnergyNeeded || Game.time % 1000 == 0) {
             this.memory.estimatedEnergyNeeded = RepairerProcess.calculateRepairEnergyPerTickPerRoom(this.memory.roomName)
+            this.checkSpawning();
         }
-        if(this.getConsumptionTimer() > 1000 && this.getConsumptionTimer() % 2000 == 0) {
+        if (this.getConsumptionTimer() > 1000 && this.getConsumptionTimer() % 2000 == 0) {
             let usagePerCreep = this.getAverageEnergyConsumption() / this.getAliveScale()
             this.memory.scale = Math.max(3, Math.ceil(this.memory.estimatedEnergyNeeded / usagePerCreep))
         } else {
@@ -38,38 +39,38 @@ export default class RepairerProcess extends EnergyCreepProcess {
             ramparts * (RAMPART_DECAY_AMOUNT / RAMPART_DECAY_TIME) +
             roadsOnSwamps * (ROAD_DECAY_AMOUNT * CONSTRUCTION_COST_ROAD_SWAMP_RATIO / ROAD_DECAY_TIME) +
             roadsOnWalls + (ROAD_DECAY_AMOUNT * CONSTRUCTION_COST_ROAD_WALL_RATIO / ROAD_DECAY_TIME) +
-            roadsOnPlains + (ROAD_DECAY_AMOUNT / ROAD_DECAY_TIME)) / REPAIR_POWER) *  1.5 // This is multiplied by 1.5 to give us a safety factor */
+            roadsOnPlains + (ROAD_DECAY_AMOUNT / ROAD_DECAY_TIME)) / REPAIR_POWER) * 1.5 // This is multiplied by 1.5 to give us a safety factor */
     }
 
     killOnNoTarget(): boolean {
         return false
     }
     act(creep: Creep, target: Structure): actResult {
-        if(creep.repair(target as Structure) == ERR_NOT_IN_RANGE) {
+        if (creep.repair(target as Structure) == ERR_NOT_IN_RANGE) {
             creep.moveTo(target as Structure)
         }
-        if (target.hits == target.hitsMax || (target.structureType == STRUCTURE_RAMPART && target.hits > RAMPART_DECAY_AMOUNT*4) || target.structureType == STRUCTURE_WALL) {
+        if (target.hits == target.hitsMax || (target.structureType == STRUCTURE_RAMPART && target.hits > RAMPART_DECAY_AMOUNT * 4) || target.structureType == STRUCTURE_WALL) {
             return actResult.SELECTNEW
         } else {
             return actResult.CONTINUE
         }
     }
 
-    selectTarget(pos: RoomPosition): _HasId | null{
+    selectTarget(pos: RoomPosition): _HasId | null {
         let dangerouslyDecayedStructures = Game.rooms[pos.roomName].find(FIND_STRUCTURES, {
             filter: function (x: Structure) {
-                return (x.structureType == STRUCTURE_ROAD && x.hits < ROAD_DECAY_AMOUNT*2 ) || (x.structureType == STRUCTURE_RAMPART && x.hits < RAMPART_DECAY_AMOUNT*4)
+                return (x.structureType == STRUCTURE_ROAD && x.hits < ROAD_DECAY_AMOUNT * 2) || (x.structureType == STRUCTURE_RAMPART && x.hits < RAMPART_DECAY_AMOUNT * 4)
             }
         })
         if (dangerouslyDecayedStructures.length != 0) return pos.findClosestByRange(dangerouslyDecayedStructures);
         let damagedStructures = Game.rooms[pos.roomName].find(FIND_STRUCTURES, {
             filter: function (x: Structure) {
-                return (x.hits < x.hitsMax && x.structureType != STRUCTURE_WALL && x.structureType != STRUCTURE_RAMPART) || (x.structureType == STRUCTURE_RAMPART && x.hits <= RAMPART_DECAY_AMOUNT*4);
+                return (x.hits < x.hitsMax && x.structureType != STRUCTURE_WALL && x.structureType != STRUCTURE_RAMPART) || (x.structureType == STRUCTURE_RAMPART && x.hits <= RAMPART_DECAY_AMOUNT * 4);
             }
         })
         if (damagedStructures.length != 0) return pos.findClosestByRange(damagedStructures);
 
-        let damagedDefenses = Game.rooms[pos.roomName].find(FIND_STRUCTURES, {filter: (struct) => (struct.structureType == STRUCTURE_WALL || struct.structureType == STRUCTURE_RAMPART) && struct.hits < struct.hitsMax })
+        let damagedDefenses = Game.rooms[pos.roomName].find(FIND_STRUCTURES, { filter: (struct) => (struct.structureType == STRUCTURE_WALL || struct.structureType == STRUCTURE_RAMPART) && struct.hits < struct.hitsMax })
         if (damagedDefenses.length == 0) return null;
         damagedDefenses.sort((a: AnyStructure, b: AnyStructure): number => {
             if (a.hits != b.hits) return a.hits - b.hits;

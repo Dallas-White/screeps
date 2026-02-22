@@ -15,13 +15,14 @@ export default class HealingProcess extends CreepProcess {
 
     setScale(n: number) {
         this.memory.scale = n
+        this.checkSpawning()
     }
 
     getSpawningPriority(): number {
         return 10000
     }
     runCreep(c: Creep, creepMemory: any): void {
-        if(c.hits < c.hitsMax) c.heal(c)
+        if (c.hits < c.hitsMax) c.heal(c)
         if (c.room.name != this.memory.room) {
             moveToRoom(c, this.memory.room)
             return
@@ -30,9 +31,9 @@ export default class HealingProcess extends CreepProcess {
         if (!target) target = c.pos.findClosestByPath(FIND_MY_CREEPS)
         if (!target) return;
         c.moveTo(target)
-        if(target.hits < target.hitsMax) c.heal(target)
+        if (target.hits < target.hitsMax) c.heal(target)
     }
-    onCreepDeath(): void {}
+    onCreepDeath(): void { }
     generateSpawnRequest(): [ratio: BodyPartConstant[], targetScale: number, baseparts: (BodyPartConstant[] | undefined), maxCreeps: (number | undefined)] {
         return [this.memory.ratio, this.memory.scale, [], undefined]
     }

@@ -1,11 +1,11 @@
 import { ProcessRegistry } from "Process";
-import EnergyCreepProcess, {actResult} from "./EnergyCreepProcess";
+import EnergyCreepProcess, { actResult } from "./EnergyCreepProcess";
 import CreepProcess from "./CreepProcess";
 import Kernel from "Kernel";
 import { Position } from "source-map";
 import RoomManagerProcess from "./RoomManagerProcess";
 
-export default class UpgradeProcess extends EnergyCreepProcess{
+export default class UpgradeProcess extends EnergyCreepProcess {
 
     generateSpawnRequest(): [ratio: BodyPartConstant[], targetScale: number, baseparts: (BodyPartConstant[] | undefined), maxCreeps: (number | undefined)] {
         return [[MOVE, WORK, CARRY], this.memory.scale, [], undefined];
@@ -26,10 +26,11 @@ export default class UpgradeProcess extends EnergyCreepProcess{
     }
 
     setScale(n: number) {
+        this.checkSpawning()
         this.memory.scale = n
     }
 
-    act(creep: Creep): actResult  {
+    act(creep: Creep): actResult {
         let upgradeResult = creep.upgradeController(Game.getObjectById(this.memory.controller_id) as StructureController)
         if (upgradeResult == ERR_NOT_IN_RANGE) {
             creep.moveTo(Game.getObjectById(this.memory.controller_id) as StructureController)
@@ -42,12 +43,12 @@ export default class UpgradeProcess extends EnergyCreepProcess{
     getSpawningPriority(): number {
         return 1;
     }
-    onCreepDeath(): void {}
+    onCreepDeath(): void { }
 
     getType(): string {
-    return "UpgradeProcess";
+        return "UpgradeProcess";
     }
 
 }
 
-ProcessRegistry.register("UpgradeProcess",UpgradeProcess)
+ProcessRegistry.register("UpgradeProcess", UpgradeProcess)

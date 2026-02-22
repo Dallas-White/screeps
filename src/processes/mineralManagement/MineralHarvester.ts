@@ -23,7 +23,7 @@ export default class MineralHarvester extends CreepProcess {
         }
         let returnCode = c.harvest(Game.getObjectById(this.memory.extractor)! as Mineral)
         if (returnCode == ERR_NOT_IN_RANGE) c.moveTo(Game.getObjectById(this.memory.extractor)! as Mineral)
-        else if(returnCode == ERR_NOT_ENOUGH_RESOURCES) this.sleep(50000)
+        else if (returnCode == ERR_NOT_ENOUGH_RESOURCES) this.sleep(MINERAL_REGEN_TIME) //This mineral source is depleated, wait for it to be regenerated
     }
 
     findAdjacentContainers() {
@@ -34,10 +34,10 @@ export default class MineralHarvester extends CreepProcess {
             this.memory.container = undefined
         }
     }
-    onCreepDeath(): void {}
+    onCreepDeath(): void { }
 
     generateSpawnRequest(): [ratio: BodyPartConstant[], targetScale: number, baseparts: (BodyPartConstant[] | undefined), maxCreeps: (number | undefined)] {
-        return [[MOVE, WORK, WORK, WORK, WORK],10, [], 1]
+        return [[MOVE, WORK, WORK, WORK, WORK], 10, [], 1]
     }
 
     getType(): string {
