@@ -38,17 +38,19 @@ class RoomManagerProcess extends Process implements SpawnManager, ConstructionFi
         let structure = structures[0];
         console.log(structure.id)
         if (structure.structureType == STRUCTURE_TOWER) {
-            let towerProcess = new TowerProcess(this.kernel, this.getPID(), structure as StructureTower)
-            this.kernel.addProcess(towerProcess)
             if (!this.memory.towers) {
                 this.memory.towers = {}
             }
-            this.memory.towers[structure.id] = towerProcess
+            if (!this.memory.towers[structure.id]) {
+                let towerProcess = new TowerProcess(this.kernel, this.getPID(), structure as StructureTower)
+                this.kernel.addProcess(towerProcess)
+                this.memory.towers[structure.id] = towerProcess
+            }
         } else if ((structure.structureType == STRUCTURE_WALL || structure.structureType == STRUCTURE_RAMPART) && !this.memory.wallBuilderProcess) {
             let wallBuilderProc = new WallBuilderProcess(this.kernel, this.getPID(), this.getPID())
             this.kernel.addProcess(wallBuilderProc)
             this.memory.wallBuilderProcess = wallBuilderProc.getPID()
-        } else if (structure.structureType == STRUCTURE_ROAD || structure.structureType == STRUCTURE_CONTAINER && !this.memory.repairerProcess) {
+        } else if (structure.structureType == STRUCTURE_ROAD || structure.structureType == STRUCTURE_CONTAINER && !this.memory.towers && !this.memory.repairerProcess) {
             let repairProc = new RepairerProcess(this.kernel, this.getPID(), this.getPID(), this.memory.room)
             this.kernel.addProcess(repairProc)
             this.memory.repairerProcess = repairProc.getPID()
@@ -120,6 +122,13 @@ class RoomManagerProcess extends Process implements SpawnManager, ConstructionFi
         if (!Game.rooms[this.memory.room] || !Game.rooms[this.memory.room].controller?.my) {
             this.kernel.killProcess(this.getPID())
             return
+        }
+        if (this.memory.repairerProcess && this.memory.towers) {
+            let damagedStrucures = Game.rooms[this.memory.room].find(FIND_STRUCTURES, { filter: (x) => x.hits < x.hitsMax && x.structureType != STRUCTURE_WALL && x.structureType != STRUCTURE_RAMPART })
+            if (damagedStrucures.length == 0) {
+                this.kernel.killProcess(this.memory.repairerProcess);
+                delete this.memory.repairerProcess
+            }
         }
 
         if (!this.memory.bootstrapped) {

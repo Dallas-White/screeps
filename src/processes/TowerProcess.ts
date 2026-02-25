@@ -23,13 +23,15 @@ export default class TowerProcess extends Process {
         if (damagedCreeps.length > 0) {
             tower.heal(damagedCreeps[0])
         }
-        let dangerouslyDecayedStructures = Game.rooms[tower.pos.roomName].find(FIND_STRUCTURES, {
-            filter: function (x: Structure) {
-                return (x.structureType == STRUCTURE_ROAD && x.hits < ROAD_DECAY_AMOUNT*2 ) || (x.structureType == STRUCTURE_RAMPART && x.hits < RAMPART_DECAY_AMOUNT*4)
+        if ((this.memory.repairing || Game.time % 20 == 0) && tower.store![RESOURCE_ENERGY] > 500) {
+            let damagedStrucures = tower.room.find(FIND_STRUCTURES, { filter: (x: Structure) => (x.hits < x.hitsMax && x.structureType != STRUCTURE_RAMPART && x.structureType != STRUCTURE_WALL) || (x.structureType == STRUCTURE_RAMPART && x.hits < RAMPART_DECAY_AMOUNT * 2) })
+            if (damagedStrucures.length > 0) {
+                let mostDamaged = _.min(damagedStrucures, (x: Structure) => x.hits);
+                tower.repair(mostDamaged)
+                this.memory.repairing = true
+            } else {
+                this.memory.repairing = false;
             }
-        })
-        if (dangerouslyDecayedStructures.length > 0 && tower.store[RESOURCE_ENERGY] > 500) {
-            tower.repair(dangerouslyDecayedStructures[0])
         }
 
     }
