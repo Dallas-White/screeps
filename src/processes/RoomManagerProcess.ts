@@ -3,7 +3,7 @@ import Kernel from "Kernel";
 import { RoomBootstrapProcess } from "./RoomBootsrapProcess";
 import HarvesterProcess from "./HarvesterProcess";
 import UpgradeProcess from "./UpgradeProcess";
-import BuilderProcess from "./BuilderProcess";
+import BuilderProcess, { ConstructionFinishedCallback } from "./BuilderProcess";
 import RepairerProcess from "./RepairerProcess";
 import CarrierProcess from "./CarrierProcess";
 import WallBuilderProcess from "./WallBuilderProcess";
@@ -19,12 +19,61 @@ import LinkManager from "./LinkManager";
 import floodFill from "utils/floodfill";
 
 const SPAWN_EMA_ALPHA = 0.05
-class RoomManagerProcess extends Process implements SpawnManager {
+class RoomManagerProcess extends Process implements SpawnManager, ConstructionFinishedCallback {
     constructor(r: Room, kernel: Kernel, parent: number) {
         super(kernel, parent)
         this.memory.room = r.name;
         this.memory.spawnQueue = []
         this.memory.spawnTick = Game.time
+    }
+
+    onConstructionFinished(type: StructureConstant, pos: RoomPosition): void {
+        let pmStructures = Game.rooms[this.memory.room].find(FIND_STRUCTURES).map(s => s.pos);
+        let sources = Game.rooms[this.memory.room].find(FIND_SOURCES).map(s => s.pos);
+        let exits = Game.rooms[this.memory.room].find(FIND_EXIT);
+        this.memory.parkingMatrix = floodFill([...pmStructures, ...sources, ...exits], this.memory.room)
+
+        let structures = pos.lookFor(LOOK_STRUCTURES).filter((s) => s.structureType == type)
+        if (structures.length == 0) return;
+        let structure = structures[0];
+        console.log(structure.id)
+        if (structure.structureType == STRUCTURE_TOWER) {
+            let towerProcess = new TowerProcess(this.kernel, this.getPID(), structure as StructureTower)
+            this.kernel.addProcess(towerProcess)
+            if (!this.memory.towers) {
+                this.memory.towers = {}
+            }
+            this.memory.towers[structure.id] = towerProcess
+        } else if ((structure.structureType == STRUCTURE_WALL || structure.structureType == STRUCTURE_RAMPART) && !this.memory.wallBuilderProcess) {
+            let wallBuilderProc = new WallBuilderProcess(this.kernel, this.getPID(), this.getPID())
+            this.kernel.addProcess(wallBuilderProc)
+            this.memory.wallBuilderProcess = wallBuilderProc.getPID()
+        } else if (structure.structureType == STRUCTURE_ROAD || structure.structureType == STRUCTURE_CONTAINER && !this.memory.repairerProcess) {
+            let repairProc = new RepairerProcess(this.kernel, this.getPID(), this.getPID(), this.memory.room)
+            this.kernel.addProcess(repairProc)
+            this.memory.repairerProcess = repairProc.getPID()
+        } else if (structure.structureType == STRUCTURE_LINK && !this.memory.linkProcess) {
+            let linkProcess = new LinkManager(this.kernel, this.getPID(), this.memory.room)
+            this.kernel.addProcess(linkProcess)
+            this.memory.linkProcess = linkProcess.getPID()
+        } else if (structure.structureType == STRUCTURE_EXTRACTOR && !this.memory.mineralProc) {
+            let mineralProc = new MineralHarvester(this.kernel, this.getPID(), Game.rooms[this.memory.room].find(FIND_MINERALS)[0])
+            this.memory.mineralHarvester = mineralProc.getPID()
+            this.kernel.addProcess(mineralProc)
+        }
+
+        if (structure.structureType == STRUCTURE_CONTAINER) {
+            if (Game.rooms[this.memory.room].controller!.level > 5 && !this.memory.mineralHauler) {
+                let mineral = Game.rooms[this.memory.room].find(FIND_MINERALS)[0]
+                let container = mineral.pos.findInRange(FIND_STRUCTURES, 1, { filter: (x) => x.structureType == STRUCTURE_CONTAINER })[0] as StructureContainer
+                if (container) {
+                    let resourceType = mineral.mineralType
+                    let mineralHaulerProc = new MineralHauler(this.kernel, this.getPID(), this.memory.room, container, resourceType)
+                    this.memory.mineralHauler = mineralHaulerProc.getPID()
+                    this.kernel.addProcess(mineralHaulerProc)
+                }
+            }
+        }
     }
     getMaxEnergy(from_init = false): number {
         if (Game.rooms[this.memory.room].energyCapacityAvailable == 0 && !from_init) {
@@ -120,46 +169,17 @@ class RoomManagerProcess extends Process implements SpawnManager {
         if (Game.time % 5 == 0) {
             let sites = Game.rooms[this.memory.room].find(FIND_CONSTRUCTION_SITES)
             if (sites.length > 0 && (!this.memory.constructionProcess || !this.kernel.getProcess(this.memory.constructionProcess))) {
-                let constructionProcess = new BuilderProcess(this.kernel, this.getPID(), this.getParent(), this.memory.mineRoom)
+                let constructionProcess = new BuilderProcess(this.kernel, this.getPID(), this.getParent(), this.memory.room, this)
                 this.kernel.addProcess(constructionProcess)
                 this.memory.constructionProcess = constructionProcess.getPID()
             } else if (sites.length == 0) {
                 this.memory.constructionProcess = undefined
             }
-            if (!this.memory.repairerProcess) {
-                let decayedStructures = Game.rooms[this.memory.room].find(FIND_STRUCTURES, { filter: (x: Structure) => x.hits < x.hitsMax })
-                if (decayedStructures.length > 0) {
-                    let repairProc = new RepairerProcess(this.kernel, this.getPID(), this.getPID(), this.memory.room)
-                    this.kernel.addProcess(repairProc)
-                    this.memory.repairerProcess = repairProc.getPID()
-                }
-            }
 
-            let towers = Game.rooms[this.memory.room].find(FIND_MY_STRUCTURES, { filter: (struct) => struct.structureType == STRUCTURE_TOWER })
-            if (!this.memory.towers) this.memory.towers = {}
-            for (let tower of towers) {
-                if (tower.id in this.memory.towers) continue
-                let towerProcess = new TowerProcess(this.kernel, this.getPID(), tower as StructureTower)
-                this.kernel.addProcess(towerProcess)
-                this.memory.towers[tower.id] = towerProcess
-            }
+
         }
-        if (!this.memory.wallBuilderProcess || !this.kernel.getProcess(this.memory.wallBuilderProcess)) {
-            let decayedWalls = Game.rooms[this.memory.room].find(FIND_STRUCTURES, { filter: (x: Structure) => x.hits < x.hitsMax && (x.structureType == STRUCTURE_WALL || x.structureType == STRUCTURE_RAMPART) })
-            if (decayedWalls.length > 0) {
-                let wallBuilderProc = new WallBuilderProcess(this.kernel, this.getPID(), this.getPID())
-                this.kernel.addProcess(wallBuilderProc)
-                this.memory.wallBuilderProcess = wallBuilderProc.getPID()
-            }
-        }
+
         let energySum = 0;
-        if (Game.time % 1000 == 0) {
-            if (!this.memory.linkProcess && Game.rooms[this.memory.room].find(FIND_MY_STRUCTURES, { filter: (s) => s.structureType == STRUCTURE_LINK }).length > 0) {
-                let linkProcess = new LinkManager(this.kernel, this.getPID(), this.memory.room)
-                this.kernel.addProcess(linkProcess)
-                this.memory.linkProcess = linkProcess.getPID()
-            }
-        }
         if (Game.time % 2000 == 0 && (Game.time - this.memory.spawnTick) >= 1500) {
             for (let x of this.getChildren()) {
                 if (!this.kernel.getProcess(x)) {
@@ -226,30 +246,6 @@ class RoomManagerProcess extends Process implements SpawnManager {
             this.memory.defender = undefined
             this.kernel.getProcess(this.memory.healer)?.shutdown()
             this.memory.healer = undefined
-        }
-        if (Game.rooms[this.memory.room].controller!.level > 5 && !this.memory.mineralHauler) {
-            let mineral = Game.rooms[this.memory.room].find(FIND_MINERALS)[0]
-            let container = mineral.pos.findInRange(FIND_STRUCTURES, 1, { filter: (x) => x.structureType == STRUCTURE_CONTAINER })[0] as StructureContainer
-            if (container) {
-                let resourceType = mineral.mineralType
-                let mineralHaulerProc = new MineralHauler(this.kernel, this.getPID(), this.memory.room, container, resourceType)
-                this.memory.mineralHauler = mineralHaulerProc.getPID()
-                this.kernel.addProcess(mineralHaulerProc)
-            }
-        }
-
-        if (Game.rooms[this.memory.room].controller!.level > 5 && !this.memory.mineralHarvester) {
-            if (Game.rooms[this.memory.room].find(FIND_MY_STRUCTURES, { filter: (s) => s.structureType == STRUCTURE_EXTRACTOR }).length > 0) {
-                let mineralProc = new MineralHarvester(this.kernel, this.getPID(), Game.rooms[this.memory.room].find(FIND_MINERALS)[0])
-                this.memory.mineralHarvester = mineralProc.getPID()
-                this.kernel.addProcess(mineralProc)
-            }
-        }
-        if (Game.time % 1000 == 0 || !this.memory.parkingMatrix) {
-            let structures = Game.rooms[this.memory.room].find(FIND_STRUCTURES).map(s => s.pos);
-            let sources = Game.rooms[this.memory.room].find(FIND_SOURCES).map(s => s.pos);
-            let exits = Game.rooms[this.memory.room].find(FIND_EXIT);
-            this.memory.parkingMatrix = floodFill([...structures, ...sources, ...exits], this.memory.room)
         }
     }
 

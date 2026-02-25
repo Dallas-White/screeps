@@ -133,9 +133,9 @@ export default class RemoteMiner extends Process implements EnergyConsumer, Ener
                 defenseProcess.setScale(hostileAttackParts * 3)
             }
         } else if (this.memory.defender) {
-            this.memory.defender = undefined
             this.kernel.getProcess(this.memory.healer)?.shutdown()
             this.kernel.getProcess(this.memory.defender)?.shutdown()
+            this.memory.defender = undefined
             this.memory.healer = undefined
         }
 

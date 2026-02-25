@@ -26,8 +26,8 @@ export default class UpgradeProcess extends EnergyCreepProcess {
     }
 
     setScale(n: number) {
-        this.checkSpawning()
         this.memory.scale = n
+        this.checkSpawning()
     }
 
     act(creep: Creep): actResult {

@@ -12,6 +12,7 @@ abstract class CreepProcess extends Process implements SpawnCallback, EnergyCons
     constructor(kernel: Kernel, parent: number, spawnManager: number) {
         super(kernel, parent)
         this.memory.spawnManager = spawnManager;
+        this.memory.__creeps = []
         this.resetEnergyConsumption()
     }
 
@@ -77,6 +78,7 @@ abstract class CreepProcess extends Process implements SpawnCallback, EnergyCons
     abstract getSpawningPriority(): number;
 
     checkSpawning() {
+        console.log("checking spawning " + this.getPID());
         let [ratio, targetScale, baseparts, maxCreeps] = this.generateSpawnRequest()
         let aliveRatio = 0
         for (let x = 0; x < this.memory.__creeps.length; x++) {
@@ -100,6 +102,10 @@ abstract class CreepProcess extends Process implements SpawnCallback, EnergyCons
     }
 
     run() {
+        if (!this.memory.checkSpawned) {
+            this.checkSpawning();
+            this.memory.checkSpawned = true;
+        }
         if (!this.kernel.getProcess(this.memory.spawnManager)) {
             this.shutdown()
             return
