@@ -1,5 +1,5 @@
 import { createDiffieHellman } from "crypto"
-import Process, {ProcessRegistry} from "./Process"
+import Process, { ProcessRegistry } from "./Process"
 
 const MAX_BUCKET = 10000
 const BUCKET_FLOOR = 3000
@@ -7,10 +7,10 @@ const BUCKET_CRITICAL = 1000
 
 export const PROFILER_ALPHA = 0.00001
 export default class Kernel {
-    pid_counter:number  = 0
+    pid_counter: number = 0
     processes: Map<number, Process> = new Map();
     getAcceptableCPUUsage(): number {
-        if(!Game.cpu.limit) return Infinity //If this code is in a simulation
+        if (!Game.cpu.limit) return Infinity //If this code is in a simulation
         let limit = Game.cpu.limit
         if (Game.cpu.bucket >= BUCKET_FLOOR) {
             limit = limit + 500
@@ -22,10 +22,10 @@ export default class Kernel {
 
     deserializeProcesses() {
         this.processes = new Map();
-        if(!Memory.processes) return
-        this.pid_counter = Memory.pid_counter? Memory.pid_counter : 0
+        if (!Memory.processes) return
+        this.pid_counter = Memory.pid_counter ? Memory.pid_counter : 0
         for (let pid of Object.keys(Memory.processes)) {
-            this.processes.set(+pid,ProcessRegistry.deserialize(Memory.processes[+pid], this))
+            this.processes.set(+pid, ProcessRegistry.deserialize(Memory.processes[+pid], this))
         }
     }
 
@@ -50,33 +50,42 @@ export default class Kernel {
     runProcesses() {
         let cpuLimit = this.getAcceptableCPUUsage();
         let processList = Array.from(this.processes.values()).sort((a, b) => (a.priority + (Game.time - a.lastRan) - (b.priority + (Game.time - b.lastRan))));
-        while(Game.cpu.getUsed() < cpuLimit) {
+        let ProcesssUsed: { [key: string]: number } = {}
+        if (!Memory.profilingData) Memory.profilingData = {}
+        while (Game.cpu.getUsed() < cpuLimit) {
             let currentProcess = processList.pop();
             if (!currentProcess) break;
             if (currentProcess?.sleepUntil > Game.time) continue;
-            if(currentProcess.getAverageCPUUsage() + Game.cpu.getUsed() > cpuLimit) continue
+            if (currentProcess.getAverageCPUUsage() + Game.cpu.getUsed() > cpuLimit) continue
             let beforeUsage = Game.cpu.getUsed()
             try {
                 currentProcess.run()
-            } catch(e) {
+            } catch (e) {
                 console.log(e)
                 console.log((e as Error).stack)
             }
             let processUsage = Game.cpu.getUsed() - beforeUsage
             currentProcess.updateAverageCPUUsage(processUsage)
-            if(!Memory.profilingData) Memory.profilingData = {}
-            if (!Memory.profilingData[currentProcess.getType()]) {
-                Memory.profilingData[currentProcess.getType()] = {averageCPU: processUsage, lastRan: Game.time}
+            if (!ProcesssUsed[currentProcess.getType()]) {
+                ProcesssUsed[currentProcess.getType()] = processUsage;
             } else {
-                if (Memory.profilingData[currentProcess.getType()].lastRan < Game.time) {
-                    Memory.profilingData[currentProcess.getType()].averageCPU =
-                        Memory.profilingData[currentProcess.getType()].averageCPU *
-                        ((1-PROFILER_ALPHA) ** (Game.time - Memory.profilingData[currentProcess.getType()].lastRan))
-                    Memory.profilingData[currentProcess.getType()].lastRan = Game.time
-                }
-                Memory.profilingData[currentProcess.getType()].averageCPU += processUsage * PROFILER_ALPHA
+
+                ProcesssUsed[currentProcess.getType()] += processUsage;
             }
             currentProcess.lastRan = Game.time;
+        }
+        for (let x of Object.keys(ProcesssUsed)) {
+            if (!Memory.profilingData[x]) {
+                Memory.profilingData[x] = { averageCPU: ProcesssUsed[x], lastRan: Game.time }
+            } else {
+                if (Memory.profilingData[x].lastRan < Game.time) {
+                    Memory.profilingData[x].averageCPU =
+                        Memory.profilingData[x].averageCPU *
+                        ((1 - PROFILER_ALPHA) ** (Game.time - Memory.profilingData[x].lastRan))
+                    Memory.profilingData[x].lastRan = Game.time
+                }
+                Memory.profilingData[x].averageCPU += ProcesssUsed[x] * PROFILER_ALPHA
+            }
         }
     }
 
@@ -92,7 +101,7 @@ export default class Kernel {
 
     killProcess(pid: number) {
         let process = this.processes.get(pid)
-        if(!process) return
+        if (!process) return
         for (let child of process!.getChildren()) {
             this.processes.get(child)?.shutdown()
         }

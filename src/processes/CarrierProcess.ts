@@ -7,8 +7,132 @@ import RoomManagerProcess from "./RoomManagerProcess";
 import { moveToRoom } from "utils/creepUtils";
 import { drop } from "lodash";
 
+abstract class CarrierJob {
+    checkJob(c: Creep): boolean {
+        return this.getSource(c) != undefined && this.getDestination(c) != undefined;
+    }
+    abstract getSource(c: Creep): Structure | Resource | undefined
+    abstract getDestination(c: Creep): Structure | undefined
+}
+
+class RefillPriorityJob extends CarrierJob {
+
+    getSource(creep: Creep): Structure | Resource | undefined {
+        let droppedEnergy: _HasRoomPosition[] = creep.room.find(FIND_DROPPED_RESOURCES, { filter: (filter) => filter.resourceType == RESOURCE_ENERGY && filter.amount > 50 });
+        let containers: _HasRoomPosition[] = creep.room.find(FIND_STRUCTURES, {
+            filter: function (structure) {
+                if (structure.structureType == STRUCTURE_STORAGE ||
+                    structure.structureType == STRUCTURE_LINK || structure.structureType == STRUCTURE_CONTAINER) {
+                    if (structure.store[RESOURCE_ENERGY] > 50) return true
+                }
+                return false
+
+            }
+        });
+        containers = containers.concat(droppedEnergy)
+        let closest_container = creep.pos.findClosestByRange(containers)
+        if (closest_container == null) return undefined;
+        return closest_container as Resource | Structure
+    }
+    getDestination(c: Creep): Structure | undefined {
+        let needsFilled = c.room.find(FIND_MY_STRUCTURES, {
+            filter: (structure) => (structure.structureType == STRUCTURE_SPAWN
+                || structure.structureType == STRUCTURE_TOWER || structure.structureType == STRUCTURE_EXTENSION)
+                && structure.store[RESOURCE_ENERGY] < structure.store.getCapacity(RESOURCE_ENERGY)
+        })
+        let closestJob = c.pos.findClosestByRange(needsFilled)
+        return closestJob ? closestJob : undefined
+
+
+    }
+
+}
+
+class DroppedEnergyToStorageJob extends CarrierJob {
+
+    getSource(c: Creep) {
+        const dropped = c.pos.findClosestByRange(FIND_DROPPED_RESOURCES, {
+            filter: res => res.resourceType === RESOURCE_ENERGY && res.amount > 0
+        });
+        return dropped ? dropped : undefined
+    }
+
+    getDestination(c: Creep) {
+        const target = c.pos.findClosestByRange(FIND_STRUCTURES, {
+            filter: s =>
+                (s.structureType === STRUCTURE_CONTAINER) &&
+                s.store.getFreeCapacity(RESOURCE_ENERGY) > 0 &&
+                !s.isSourceStructure
+        });
+        return target ? target : undefined
+    }
+}
+
+class SourceToRemoteContainersJob extends CarrierJob {
+
+    getSource(c: Creep) {
+        let sources = c.room.find(FIND_SOURCES);
+        let source = c.pos.findClosestByRange(FIND_STRUCTURES, {
+            filter: s =>
+                s.structureType === STRUCTURE_CONTAINER &&
+                s.store[RESOURCE_ENERGY] > 0 &&
+                s.isSourceStructure
+        });
+        return source ? source : undefined
+    }
+
+    getDestination(c: Creep) {
+
+        const target = c.pos.findClosestByRange(FIND_STRUCTURES, {
+            filter: s =>
+                s.structureType === STRUCTURE_CONTAINER &&
+                s.store.getFreeCapacity(RESOURCE_ENERGY) > 0 &&
+                !s.isSourceStructure
+        });
+        return target ? target : undefined
+    }
+}
+
+class SourceToStorage extends CarrierJob {
+
+    getSource(c: Creep) {
+        let sources = c.room.find(FIND_SOURCES)
+        const source = c.pos.findClosestByRange(FIND_STRUCTURES, {
+            filter: s =>
+                ((s.structureType === STRUCTURE_CONTAINER &&
+                    sources.some(spawn => spawn.pos.getRangeTo(s) <= 1)) || s.structureType == STRUCTURE_LINK) &&
+                s.store.getUsedCapacity(RESOURCE_ENERGY) > 0
+        })
+        return source ? source : undefined
+    }
+
+    getDestination(c: Creep) {
+
+        if (c.room.storage && c.room.storage.store[RESOURCE_ENERGY] > 500000) return undefined
+        return c.room.storage
+    }
+}
+
+class SourceToTerminal extends CarrierJob {
+
+    getSource(c: Creep) {
+        let sources = c.room.find(FIND_SOURCES)
+        const source = c.pos.findClosestByRange(FIND_STRUCTURES, {
+            filter: s =>
+                s.structureType === STRUCTURE_CONTAINER &&
+                s.store[RESOURCE_ENERGY] > 0 &&
+                sources.some(spawn => spawn.pos.getRangeTo(s) <= 1)
+        });
+        return source ? source : undefined
+    }
+
+    getDestination(c: Creep) {
+        return c.room.terminal
+    }
+}
 export default class CarrierProcess extends CreepProcess {
 
+    private static JOBS = [new RefillPriorityJob(), new DroppedEnergyToStorageJob(), new SourceToRemoteContainersJob(), new SourceToStorage(), new SourceToTerminal()]
     runCreep(c: Creep, creepMemory: any): void {
         if (!this.memory.room) this.memory.room = (this.kernel.getProcess(this.getParent()) as RoomManagerProcess).getRoomName()
         if (c.room.name != this.memory.room) {
@@ -16,20 +140,22 @@ export default class CarrierProcess extends CreepProcess {
             return
         }
         if (!creepMemory.state) creepMemory.state = "fetching"
-        let jobs = [new RefillPriorityJob(), new DroppedEnergyToStorageJob(), new SourceToRemoteContainersJob(), new SourceToStorage(), new SourceToTerminal()]
         if (!creepMemory.currentJobIdx) {
-            for (let job in jobs) {
-                if (jobs[job].checkJob(c)) {
+            let foundJob = false;
+            for (let job in CarrierProcess.JOBS) {
+                if (CarrierProcess.JOBS[job].checkJob(c)) {
                     creepMemory.currentJobIdx = job
+                    foundJob = true;
                     break
                 }
             }
+            if (!foundJob) this.sleep(5);
         }
         if (!creepMemory.currentJobIdx) {
             this.park(c);
             return;
         }
-        let job = jobs[creepMemory.currentJobIdx]
+        let job = CarrierProcess.JOBS[creepMemory.currentJobIdx]
         if (creepMemory.state == "fetching") {
             if (c.store.getFreeCapacity(RESOURCE_ENERGY) == 0) {
                 creepMemory.state = "depositing"
@@ -134,124 +260,3 @@ export default class CarrierProcess extends CreepProcess {
 }
 ProcessRegistry.register("CarrierProcess", CarrierProcess)
 
-abstract class CarrierJob {
-    checkJob(c: Creep): boolean {
-        return this.getSource(c) != undefined && this.getDestination(c) != undefined;
-    }
-    abstract getSource(c: Creep): Structure | Resource | undefined
-    abstract getDestination(c: Creep): Structure | undefined
-}
-
-class RefillPriorityJob extends CarrierJob {
-
-    getSource(creep: Creep): Structure | Resource | undefined {
-        let droppedEnergy: _HasRoomPosition[] = creep.room.find(FIND_DROPPED_RESOURCES, { filter: (filter) => filter.resourceType == RESOURCE_ENERGY && filter.amount > 50 });
-        let containers: _HasRoomPosition[] = creep.room.find(FIND_STRUCTURES, {
-            filter: function (structure) {
-                if (structure.structureType == STRUCTURE_STORAGE ||
-                    structure.structureType == STRUCTURE_LINK || structure.structureType == STRUCTURE_CONTAINER) {
-                    if (structure.store[RESOURCE_ENERGY] > 50) return true
-                }
-                return false
-
-            }
-        });
-        containers = containers.concat(droppedEnergy)
-        let closest_container = creep.pos.findClosestByRange(containers)
-        if (closest_container == null) return undefined;
-        return closest_container as Resource | Structure
-    }
-    getDestination(c: Creep): Structure | undefined {
-        let needsFilled = c.room.find(FIND_MY_STRUCTURES, {
-            filter: (structure) => (structure.structureType == STRUCTURE_SPAWN
-                || structure.structureType == STRUCTURE_TOWER || structure.structureType == STRUCTURE_EXTENSION)
-                && structure.store[RESOURCE_ENERGY] < structure.store.getCapacity(RESOURCE_ENERGY)
-        })
-        let closestJob = c.pos.findClosestByRange(needsFilled)
-        return closestJob ? closestJob : undefined
-
-
-    }
-
-}
-
-class DroppedEnergyToStorageJob extends CarrierJob {
-
-    getSource(c: Creep) {
-        const dropped = c.pos.findClosestByRange(FIND_DROPPED_RESOURCES, {
-            filter: res => res.resourceType === RESOURCE_ENERGY && res.amount > 0
-        });
-        return dropped ? dropped : undefined
-    }
-
-    getDestination(c: Creep) {
-        const target = c.pos.findClosestByRange(FIND_STRUCTURES, {
-            filter: s =>
-                (s.structureType === STRUCTURE_CONTAINER) &&
-                s.store.getFreeCapacity(RESOURCE_ENERGY) > 0 &&
-                c.room.find(FIND_MINERALS).every(spawn => spawn.pos.getRangeTo(s) > 1)
-        });
-        return target ? target : undefined
-    }
-}
-
-class SourceToRemoteContainersJob extends CarrierJob {
-
-    getSource(c: Creep) {
-        let source = c.pos.findClosestByRange(FIND_STRUCTURES, {
-            filter: s =>
-                s.structureType === STRUCTURE_CONTAINER &&
-                s.store[RESOURCE_ENERGY] > 0 &&
-                c.room.find(FIND_SOURCES).some(spawn => spawn.pos.getRangeTo(s) <= 1)
-        });
-        return source ? source : undefined
-    }
-
-    getDestination(c: Creep) {
-
-        const target = c.pos.findClosestByRange(FIND_STRUCTURES, {
-            filter: s =>
-                (s.structureType === STRUCTURE_CONTAINER) &&
-                s.store.getFreeCapacity(RESOURCE_ENERGY) > 0 &&
-                c.room.find(FIND_SOURCES).every(spawn => spawn.pos.getRangeTo(s) > 1) &&
-                c.room.find(FIND_MINERALS).every(spawn => spawn.pos.getRangeTo(s) > 1)
-        });
-        return target ? target : undefined
-    }
-}
-
-class SourceToStorage extends CarrierJob {
-
-    getSource(c: Creep) {
-        const source = c.pos.findClosestByRange(FIND_STRUCTURES, {
-            filter: s =>
-                ((s.structureType === STRUCTURE_CONTAINER &&
-                    c.room.find(FIND_SOURCES).some(spawn => spawn.pos.getRangeTo(s) <= 1)) || s.structureType == STRUCTURE_LINK) &&
-                s.store.getUsedCapacity(RESOURCE_ENERGY) > 0
-        })
-        return source ? source : undefined
-    }
-
-    getDestination(c: Creep) {
-
-        if (c.room.storage && c.room.storage.store[RESOURCE_ENERGY] > 500000) return undefined
-        return c.room.storage
-    }
-}
-
-class SourceToTerminal extends CarrierJob {
-
-    getSource(c: Creep) {
-        const source = c.pos.findClosestByRange(FIND_STRUCTURES, {
-            filter: s =>
-                s.structureType === STRUCTURE_CONTAINER &&
-                s.store[RESOURCE_ENERGY] > 0 &&
-                c.room.find(FIND_SOURCES).some(spawn => spawn.pos.getRangeTo(s) <= 1)
-        });
-        return source ? source : undefined
-    }
-
-    getDestination(c: Creep) {
-        return c.room.terminal
-    }
-}

@@ -1,6 +1,5 @@
 import type Kernel from "Kernel";
 
-
 const memoryAverageFactor = 0.2
 
 abstract class Process {
@@ -33,7 +32,7 @@ abstract class Process {
         return this.pid;
     }
 
-    setPID(pid:number) {
+    setPID(pid: number) {
         this.pid = pid
     }
 
@@ -73,8 +72,8 @@ abstract class Process {
         this.children = data.children
         this.averageCPUUsage = data.averageCPUUsage;
         this.parent = data.parent
-      }
-    sleep(ticks:number = 0) {
+    }
+    sleep(ticks: number = 0) {
         if (!ticks)
             this.sleepUntil = Number.MAX_SAFE_INTEGER;
         else
@@ -86,7 +85,7 @@ abstract class Process {
     }
 
     addChild(child: number) {
-           this.children.push(child);
+        this.children.push(child);
     }
 
     removeChild(child: number) {
@@ -102,7 +101,7 @@ export default Process
 
 
 export class ProcessRegistry {
-    private static registry = new Map < string, abstract new (...args: any[]) => Process>();
+    private static registry = new Map<string, abstract new (...args: any[]) => Process>();
 
     static register(type: string, cls: abstract new (...args: any[]) => Process) {
         this.registry.set(type, cls);
@@ -120,4 +119,4 @@ export class ProcessRegistry {
         return instance;
     }
 
-  }
+}

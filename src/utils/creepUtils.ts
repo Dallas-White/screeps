@@ -64,7 +64,7 @@ export function gatherEnergy(creep: Creep, creepMemory: any): number {
             }
         });
         containers = containers.concat(droppedEnergy)
-        creepMemory.__fetchTarget = (creep.pos.findClosestByPath(containers) as unknown as _HasId)?.id
+        creepMemory.__fetchTarget = (creep.pos.findClosestByRange(containers) as unknown as _HasId)?.id
     }
 
     if (creepMemory.__fetchTarget) {

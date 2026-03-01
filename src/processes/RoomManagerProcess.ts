@@ -50,7 +50,7 @@ class RoomManagerProcess extends Process implements SpawnManager, ConstructionFi
             let wallBuilderProc = new WallBuilderProcess(this.kernel, this.getPID(), this.getPID())
             this.kernel.addProcess(wallBuilderProc)
             this.memory.wallBuilderProcess = wallBuilderProc.getPID()
-        } else if (structure.structureType == STRUCTURE_ROAD || structure.structureType == STRUCTURE_CONTAINER && !this.memory.towers && !this.memory.repairerProcess) {
+        } else if (structure.structureType == STRUCTURE_ROAD || structure.structureType == STRUCTURE_CONTAINER && (!this.memory.towers || this.memory.towers.length == 0) && !this.memory.repairerProcess) {
             let repairProc = new RepairerProcess(this.kernel, this.getPID(), this.getPID(), this.memory.room)
             this.kernel.addProcess(repairProc)
             this.memory.repairerProcess = repairProc.getPID()

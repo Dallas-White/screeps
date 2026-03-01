@@ -18,7 +18,7 @@ export default class WallBuilderProcess extends EnergyCreepProcess {
             creep.moveTo(target as Structure)
             return actResult.CONTINUE
         }
-        if (Game.time % 20 == 0) return actResult.SELECTNEW
+        if (Game.time % 50 == 0) return actResult.SELECTNEW
         return actResult.CONTINUE;
     }
     getScale(): number {
@@ -37,7 +37,7 @@ export default class WallBuilderProcess extends EnergyCreepProcess {
         let damagedDefenses = Game.rooms[pos.roomName].find(FIND_STRUCTURES, { filter: (struct) => (struct.structureType == STRUCTURE_WALL || struct.structureType == STRUCTURE_RAMPART) && struct.hits < struct.hitsMax })
         if (damagedDefenses.length == 0) return null;
         damagedDefenses.sort((a: AnyStructure, b: AnyStructure): number => {
-            return (a.hits - b.hits) * 0.01 + (pos.getRangeTo(a) - pos.getRangeTo(b)) * 0.99;
+            return (((Math.log10(a.hits) - Math.log10(b.hits)) * (50 / Math.log10(WALL_HITS_MAX))) / 50) * 0.5 + ((pos.getRangeTo(a) - pos.getRangeTo(b)) / 50) * 0.5;
         })
         return damagedDefenses[0];
     }

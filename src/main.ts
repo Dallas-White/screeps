@@ -67,6 +67,15 @@ declare global {
     partRatio: BodyPartConstant[]
     maxScale: number
   }
+
+  interface StructureLink {
+    isSourceStructure: boolean;
+  }
+
+  interface StructureContainer {
+    isSourceStructure: boolean;
+  }
+
   function printProfilerData(): void
   function attack(roomName: string, attack: number, heal: number): void
   function stopAttack(roomName: string): void
@@ -75,10 +84,35 @@ declare global {
 
 }
 
+
+const sourceStructureCache: { [id: string]: boolean } = {};
+
 // When compiling TS to JS and bundling with rollup, the line numbers and file names in error messages change
 // This utility uses source maps to get the line numbers and file names of the original, TS source code
 export const loop = ErrorMapper.wrapLoop(() => {
+  const defineSourceProperty = (prototype: any, range: number) => {
+    Object.defineProperty(prototype, 'isSourceStructure', {
+      get: function () {
+        // Check global cache (persists until global reset)
+        if (sourceStructureCache[this.id] !== undefined) {
+          return sourceStructureCache[this.id];
+        }
 
+        // Links use Range 2, Containers use Range 1
+        const isNearSource = this.pos.findInRange(FIND_SOURCES, range).length > 0 && this.pos.findInRange(FIND_MINERALS, range).length > 0;
+
+        return sourceStructureCache[this.id] = isNearSource;
+      },
+      configurable: true
+    });
+  };
+
+  // Apply Range 1 to Containers (Standard for miners sitting on them)
+  defineSourceProperty(StructureContainer.prototype, 1);
+
+  // Apply Range 2 to Links (Allows for more flexible base layouts)
+  defineSourceProperty(StructureLink.prototype, 2);
+  // 2. Define the override
   global.remoteMine = function (parentRoom: string, childRoom: string) {
     let kernel = new Kernel();
     kernel.deserializeProcesses();
