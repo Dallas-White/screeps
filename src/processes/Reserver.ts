@@ -1,19 +1,23 @@
 import { moveToRoom } from "utils/creepUtils";
 import CreepProcess from "./CreepProcess";
-import { ProcessRegistry } from "Process";
+import Process, { ProcessRegistry } from "Process";
 import Kernel from "Kernel";
+import { SpawnManager } from "SpawnManager";
 
-export default class Reserver extends CreepProcess {
+export default class Reserver extends CreepProcess<{ room: string }> {
+    initCreepMemory(): {} {
+        return {}
+    }
 
-    constructor(kernel: Kernel, parent: number, spawnManager: number, room: string) {
-        super(kernel, parent, spawnManager)
+    constructor(kernel: Kernel, parent: Process, spawnManager: SpawnManager, room: string) {
+        super(kernel, parent, spawnManager, { room: room })
         this.memory.room = room
     }
 
     getSpawningPriority(): number {
         return 0
     }
-    runCreep(c: Creep, creepMemory: any): void {
+    runCreep(c: Creep): void {
         if (c.room.name != this.memory.room) {
             moveToRoom(c, this.memory.room)
             return
@@ -22,7 +26,7 @@ export default class Reserver extends CreepProcess {
             c.moveTo(c.room.controller!)
         }
     }
-    onCreepDeath(): void {}
+    onCreepDeath(): void { }
 
     generateSpawnRequest(): [ratio: BodyPartConstant[], targetScale: number, baseparts: (BodyPartConstant[] | undefined), maxCreeps: (number | undefined)] {
         return [[MOVE, CLAIM], 2, [], undefined]

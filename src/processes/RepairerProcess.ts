@@ -1,21 +1,24 @@
 import Kernel from "Kernel";
 import CreepProcess from "./CreepProcess";
 import EnergyCreepProcess, { actResult } from "./EnergyCreepProcess";
-import { ProcessRegistry } from "Process";
+import Process, { ProcessRegistry } from "Process";
+import { SpawnManager } from "SpawnManager";
 
-export default class RepairerProcess extends EnergyCreepProcess {
+interface RepairProcessMemory {
+    room: string,
+    estimatedEnergyNeeded: number
+    scale: number
+}
 
+export default class RepairerProcess extends EnergyCreepProcess<RepairProcessMemory> {
 
-    constructor(kernel: Kernel, parent: number, spawnManager: number, roomName: string) {
-        super(kernel, parent, spawnManager, roomName);
-        this.memory.roomName = roomName;
-        this.memory.room = roomName //TODO: fix both variables to be one
-        this.memory.scale = 3
+    constructor(kernel: Kernel, parent: Process, spawnManager: SpawnManager, roomName: string) {
+        super(kernel, parent, spawnManager, roomName, { room: roomName, estimatedEnergyNeeded: 0, scale: 3 });
     }
 
     generateSpawnRequest(): [ratio: BodyPartConstant[], targetScale: number, baseparts: (BodyPartConstant[] | undefined), maxCreeps: (number | undefined)] {
-        if (!this.memory.estimatedEnergyNeeded || Game.time % 1000 == 0) {
-            this.memory.estimatedEnergyNeeded = RepairerProcess.calculateRepairEnergyPerTickPerRoom(this.memory.roomName)
+        if (this.memory.estimatedEnergyNeeded == 0 || Game.time % 1000 == 0) {
+            this.memory.estimatedEnergyNeeded = RepairerProcess.calculateRepairEnergyPerTickPerRoom(this.memory.room)
             this.checkSpawning();
         }
         if (this.getConsumptionTimer() > 1000 && this.getConsumptionTimer() % 2000 == 0) {

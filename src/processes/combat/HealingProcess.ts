@@ -1,16 +1,27 @@
 import Kernel from "Kernel";
-import { ProcessRegistry } from "Process";
+import Process, { ProcessRegistry } from "Process";
 import CreepProcess from "processes/CreepProcess";
+import { SpawnManager } from "SpawnManager";
 import { moveToRoom } from "utils/creepUtils";
 
 
-export default class HealingProcess extends CreepProcess {
-    constructor(kernel: Kernel, parent: number, spawnManager: number, scale: number, ratio: BodyPartConstant[], room: string, object: AnyCreep | Structure | undefined) {
-        super(kernel, parent, spawnManager)
-        this.memory.room = room
-        this.memory.scale = scale;
-        this.memory.ratio = ratio;
-        this.memory.object = object
+interface HealingProcessMemory {
+    scale: number,
+    ratio: BodyPartConstant[],
+    object: Id<AnyCreep> | Id<Structure> | undefined
+    room: string
+}
+
+export default class HealingProcess extends CreepProcess<HealingProcessMemory> {
+
+
+    constructor(kernel: Kernel, parent: Process, spawnManager: SpawnManager, scale: number, ratio: BodyPartConstant[], room: string, object: AnyCreep | Structure | undefined) {
+        super(kernel, parent, spawnManager, {
+            room: room,
+            scale: scale,
+            ratio: ratio,
+            object: object?.id
+        })
     }
 
     setScale(n: number) {
@@ -18,10 +29,14 @@ export default class HealingProcess extends CreepProcess {
         this.checkSpawning()
     }
 
+    initCreepMemory(): {} {
+        return {}
+    }
+
     getSpawningPriority(): number {
         return 10000
     }
-    runCreep(c: Creep, creepMemory: any): void {
+    runCreep(c: Creep): void {
         if (c.hits < c.hitsMax) c.heal(c)
         if (c.room.name != this.memory.room) {
             moveToRoom(c, this.memory.room)

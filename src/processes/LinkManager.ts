@@ -1,28 +1,39 @@
 import Kernel from "Kernel";
 import Process, { ProcessRegistry } from "Process";
 
-export default class LinkManager extends Process {
+interface LinkManagerMemory {
+    links: {
+        nonSourceLinks: Array<Id<StructureLink>>
+        sourceLinks: Array<Id<StructureLink>>
+    }
+    room: string
+}
+export default class LinkManager extends Process<LinkManagerMemory> {
 
-    constructor(kernel: Kernel, parent: number, room: string) {
-        super(kernel, parent)
-        this.memory.room = room
-
+    constructor(kernel: Kernel, parent: Process, room: string) {
+        super(kernel, parent, {
+            links: {
+                nonSourceLinks: [],
+                sourceLinks: []
+            },
+            room: room
+        })
     }
 
     run(): void {
         if (!this.memory.links || Game.time % 1000 == 0) {
             this.linkScan()
         }
-        let freeNonSourceLinks: StructureLink[] = this.memory.links.nonSourceLinks.filter((link: Id<StructureLink>) => (Game.getObjectById(link) as StructureLink).store.getFreeCapacity(RESOURCE_ENERGY) > 50).map((s: Id<StructureLink>) => Game.getObjectById(s)).sort((a: StructureLink, b: StructureLink) => a.store.getUsedCapacity(RESOURCE_ENERGY) - b.store.getUsedCapacity(RESOURCE_ENERGY));
-        let filledSourceLinks: StructureLink[] = this.memory.links.sourceLinks.filter((link: Id<StructureLink>) => (Game.getObjectById(link) as StructureLink).store.getUsedCapacity(RESOURCE_ENERGY) > 50).map((s: Id<StructureLink>) => Game.getObjectById(s))
-        if(freeNonSourceLinks.length == 0) return
+        let freeNonSourceLinks: StructureLink[] = (this.memory.links.nonSourceLinks.map((s: Id<StructureLink>) => Game.getObjectById(s)) as StructureLink[]).sort((a: StructureLink, b: StructureLink) => a.store.getUsedCapacity(RESOURCE_ENERGY) - b.store.getUsedCapacity(RESOURCE_ENERGY)).filter((link) => link.store.getFreeCapacity(RESOURCE_ENERGY) > 50)
+        let filledSourceLinks: StructureLink[] = (this.memory.links.sourceLinks.map((s: Id<StructureLink>) => Game.getObjectById(s)).filter((s) => (s != null)) as StructureLink[]).filter((link: StructureLink) => link!.store.getUsedCapacity(RESOURCE_ENERGY) > 50)
+        if (freeNonSourceLinks.length == 0) return
         for (let sourceLink of filledSourceLinks) {
             sourceLink.transferEnergy(freeNonSourceLinks[0])
         }
     }
 
     linkScan() {
-        this.memory.links = { sourceLinks: [], nonSourceLinks: []}
+        this.memory.links = { sourceLinks: [], nonSourceLinks: [] }
         let room = Game.rooms[this.memory.room]
         let sources = room.find(FIND_SOURCES)
         let links: StructureLink[] = room.find(FIND_MY_STRUCTURES, { filter: (s) => s.structureType == STRUCTURE_LINK })

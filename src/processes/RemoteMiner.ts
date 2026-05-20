@@ -9,11 +9,36 @@ import RepairerProcess from "./RepairerProcess";
 import Hauler from "./Hauler";
 import AttackCreepProcess from "./combat/AttackCreepProcess";
 import PillagerProcess from "./combat/PillagerProecss";
+import { SpawnManager } from "SpawnManager";
 
-export default class RemoteMiner extends Process implements EnergyConsumer, EnergyProducer {
+interface RemoteMinerMemory {
+    harvesters: boolean;
+    built: boolean;
+    builderProc: Pid<BuilderProcess> | undefined;
+    repair: Pid<RepairerProcess> | undefined;
+    haulersSpawned: boolean;
+    defender: Pid<AttackCreepProcess> | undefined;
+    reserver: Pid<Reserver> | undefined,
+    mineRoom: string
+    parentRoom: string
+    planned: boolean
+}
 
-    constructor(kernel: Kernel, parent: number, parentRoom: string, mineRoom: string) {
-        super(kernel, parent)
+export default class RemoteMiner extends Process<RemoteMinerMemory> implements EnergyConsumer, EnergyProducer {
+
+    constructor(kernel: Kernel, parent: Process, parentRoom: string, mineRoom: string) {
+        super(kernel, parent, {
+            harvesters: false,
+            built: false,
+            builderProc: undefined,
+            repair: undefined,
+            haulersSpawned: false,
+            defender: undefined,
+            reserver: undefined,
+            mineRoom: mineRoom,
+            parentRoom: parentRoom,
+            planned: false
+        })
         this.memory.parentRoom = parentRoom
         this.memory.mineRoom = mineRoom
     }
@@ -63,15 +88,15 @@ export default class RemoteMiner extends Process implements EnergyConsumer, Ener
     }
     run(): void {
         if (!this.memory.reserver) {
-            let reserver = new Reserver(this.kernel, this.getPID(), this.getParent(), this.memory.mineRoom);
+            let reserver = new Reserver(this.kernel, this, this.getParent() as SpawnManager, this.memory.mineRoom);
             this.kernel.addProcess(reserver)
-            this.memory.reserver = reserver
+            this.memory.reserver = reserver.getPID()
         }
 
         if (!Game.rooms[this.memory.mineRoom]) return
         if (!this.memory.harvesters) {
             for (let source of Game.rooms[this.memory.mineRoom].find(FIND_SOURCES)) {
-                this.kernel.addProcess(new HarvesterProcess(this.kernel, this.getPID(), this.getParent(), source))
+                this.kernel.addProcess(new HarvesterProcess(this.kernel, this, this.getParent() as SpawnManager, source))
             }
             this.memory.harvesters = true
         }
@@ -103,28 +128,28 @@ export default class RemoteMiner extends Process implements EnergyConsumer, Ener
         }
         if (!this.memory.built && (!this.memory.builderProc || !this.kernel.getProcess(this.memory.builderProc))) {
 
-            let constructionProcess = new BuilderProcess(this.kernel, this.getPID(), this.getParent(), this.memory.mineRoom)
+            let constructionProcess = new BuilderProcess(this.kernel, this, this.getParent() as SpawnManager, this.memory.mineRoom)
             this.kernel.addProcess(constructionProcess)
             this.memory.planned = true;
             this.memory.builderProc = constructionProcess.getPID()
         }
         if (!this.memory.repair) {
-            let repairProc = new RepairerProcess(this.kernel, this.getPID(), this.getParent(), this.memory.mineRoom)
+            let repairProc = new RepairerProcess(this.kernel, this, this.getParent() as SpawnManager, this.memory.mineRoom)
             this.kernel.addProcess(repairProc)
-            this.memory.repair = repairProc
+            this.memory.repair = repairProc.getPID()
         }
         if (!this.memory.haulersSpawned && Game.rooms[this.memory.mineRoom].find(FIND_CONSTRUCTION_SITES).length == 0) {
             this.memory.built = true;
             let containers = Game.rooms[this.memory.mineRoom].find(FIND_STRUCTURES, { filter: (s) => s.structureType == STRUCTURE_CONTAINER })
             for (let container of containers) {
-                this.kernel.addProcess(new PillagerProcess(this.kernel, this.getPID(), this.getParent(), this.memory.mineRoom, this.memory.parentRoom, 7));
+                this.kernel.addProcess(new PillagerProcess(this.kernel, this, this.getParent() as SpawnManager, this.memory.mineRoom, this.memory.parentRoom, 7));
             }
             this.memory.haulersSpawned = true
         }
         if (Game.rooms[this.memory.mineRoom].find(FIND_HOSTILE_CREEPS).length > 0 || Game.rooms[this.memory.mineRoom].find(FIND_HOSTILE_STRUCTURES).length > 0) {
             let hostileAttackParts = _.sum(Game.rooms[this.memory.mineRoom].find(FIND_HOSTILE_CREEPS).map((c) => _.sum(_.filter(c.body, (c) => c.type == ATTACK || c.type == HEAL || c.type == RANGED_ATTACK))))
             if (!this.memory.defender) {
-                let defenseProcess = new AttackCreepProcess(this.kernel, this.getPID(), this.getParent(), Math.max(hostileAttackParts * 2, 6), [TOUGH, ATTACK, MOVE], this.memory.mineRoom, undefined)
+                let defenseProcess = new AttackCreepProcess(this.kernel, this, this.getParent() as SpawnManager, Math.max(hostileAttackParts * 2, 6), [TOUGH, ATTACK, MOVE], this.memory.mineRoom, undefined)
                 this.memory.defender = defenseProcess.getPID()
                 this.kernel.addProcess(defenseProcess)
             }
@@ -133,10 +158,8 @@ export default class RemoteMiner extends Process implements EnergyConsumer, Ener
                 defenseProcess.setScale(hostileAttackParts * 3)
             }
         } else if (this.memory.defender) {
-            this.kernel.getProcess(this.memory.healer)?.shutdown()
             this.kernel.getProcess(this.memory.defender)?.shutdown()
             this.memory.defender = undefined
-            this.memory.healer = undefined
         }
 
 

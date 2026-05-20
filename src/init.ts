@@ -1,22 +1,36 @@
+import Kernel from "Kernel";
 import Process, { ProcessRegistry } from "Process";
 import { FlagHandler } from "processes/flagHandlers/flagHandler";
 import RoomManagerProcess from "processes/RoomManagerProcess";
+import { SpawnCallback, SpawnManager } from "SpawnManager";
 
-export default class init extends Process implements SpawnManager {
 
-    getRoomManager(roomName: string): number | undefined {
+interface initMemory {
+    rooms: Record<string, Pid<RoomManagerProcess>>
+    flagHandler: Pid<FlagHandler> | undefined
+}
+export default class init extends Process<initMemory> implements SpawnManager {
+
+    constructor(kernel: Kernel) {
+        super(kernel, 0, {
+            rooms: {},
+            flagHandler: undefined
+        })
+    }
+
+    getRoomManager(roomName: string): Pid<RoomManagerProcess> | undefined {
         return this.memory.rooms[roomName]
     }
 
     getMaxEnergy(): number {
         let maxEnergy = 0
         for (let x of Object.values(this.memory.rooms)) {
-            let currentEnergy = (this.kernel.getProcess(x as number) as RoomManagerProcess).getMaxEnergy(true)
+            let currentEnergy = (this.kernel.getProcess(x)!).getMaxEnergy(true)
             if (currentEnergy > maxEnergy) maxEnergy = currentEnergy
         }
         return maxEnergy
     }
-    addToQueue(body: BodyPartConstant[], priority: number, targetRoom: string | undefined, spawnCallback: SpawnCallback, callbackValues: any): boolean {
+    addToQueue<T>(body: BodyPartConstant[], priority: number, targetRoom: string | undefined, spawnCallback: SpawnCallback<T>, callbackValues: T): boolean {
         let bodyCost = _.sum(_.map(body, (part) => BODYPART_COST[part]))
         let rooms = Object.keys(this.memory.rooms)
         if (targetRoom) {
@@ -24,7 +38,7 @@ export default class init extends Process implements SpawnManager {
         }
 
         for (let x of rooms) {
-            let roomManager = this.kernel.getProcess(this.memory.rooms[x] as number) as RoomManagerProcess
+            let roomManager = this.kernel.getProcess(this.memory.rooms[x])!
             if (roomManager.getMaxEnergy(true) >= bodyCost) {
                 return roomManager.addToQueue(body, priority, targetRoom, spawnCallback, callbackValues)
             }
@@ -34,24 +48,24 @@ export default class init extends Process implements SpawnManager {
     }
     cancelSpawn(pid: number): void {
         for (let x of Object.values(this.memory.rooms)) {
-            (this.kernel.getProcess(x as number) as RoomManagerProcess)?.cancelSpawn(pid, false)
+            this.kernel.getProcess(x)?.cancelSpawn(pid, false)
         }
     }
     run(): void {
         if (!this.memory.rooms) this.memory.rooms = {}
         let filteredRooms = _.filter(Object.keys(this.memory.rooms), (s: string) => !(s in Game.rooms) || !this.kernel.getProcess(this.memory.rooms[s]))
         for (let x of filteredRooms) {
-            this.memory.rooms[x] = undefined
+            delete this.memory.rooms[x]
         }
         for (let x of Object.keys(Game.rooms)) {
             if (x in this.memory.rooms) continue
             if (!Game.rooms[x].controller?.my) continue
-            let rmp = new RoomManagerProcess(Game.rooms[x], this.kernel, this.getPID())
+            let rmp = new RoomManagerProcess(Game.rooms[x], this.kernel, this)
             this.kernel.addProcess(rmp)
             this.memory.rooms[x] = rmp.getPID();
         }
         if (!this.memory.flagHandler) {
-            let flagHandlerProcess = new FlagHandler(this.kernel, this.getPID())
+            let flagHandlerProcess = new FlagHandler(this.kernel, this)
             this.kernel.addProcess(flagHandlerProcess)
             this.memory.flagHandler = flagHandlerProcess.getPID()
         }

@@ -17,11 +17,63 @@ import MineralHarvester from "./mineralManagement/MineralHarvester";
 import MineralHauler from "./mineralManagement/MineralHauler";
 import LinkManager from "./LinkManager";
 import floodFill from "utils/floodfill";
+import { SpawnCallback, SpawnManager } from "SpawnManager";
 
 const SPAWN_EMA_ALPHA = 0.05
-class RoomManagerProcess extends Process implements SpawnManager, ConstructionFinishedCallback {
-    constructor(r: Room, kernel: Kernel, parent: number) {
-        super(kernel, parent)
+
+interface SpawnRequest<T> {
+    pid: Pid<SpawnCallback<T>>
+    body: BodyPartConstant[]
+    priority: number
+    callbackValues: T
+}
+
+interface RoomManagerMemory {
+    room: string;
+    spawnQueue: SpawnRequest<any>[];
+    spawnTick: number;
+    parkingMatrix: number[];
+    towers: Record<Id<StructureTower>, Pid<TowerProcess>>;
+    wallBuilderProcess: Pid<WallBuilderProcess> | undefined;
+    repairerProcess: Pid<RepairerProcess> | undefined;
+    linkProcess: Pid<LinkManager> | undefined;
+    mineralHarvester: Pid<MineralHarvester> | undefined;
+    mineralHauler: Pid<MineralHauler> | undefined;
+    bootstrapped: boolean;
+    upgradeProcess: Pid<UpgradeProcess> | undefined;
+    carrierProcesses: Pid<CarrierProcess>[];
+    spawnEMA: {
+        ema: number
+        time: number
+    };
+    constructionProcess: Pid<BuilderProcess> | undefined;
+    bootstrapProcess: Pid<RoomBootstrapProcess> | undefined;
+    defender: Pid<AttackCreepProcess> | undefined;
+    healer: Pid<HealingProcess> | undefined;
+
+}
+class RoomManagerProcess extends Process<RoomManagerMemory> implements SpawnManager, ConstructionFinishedCallback {
+    constructor(r: Room, kernel: Kernel, parent: Process) {
+        super(kernel, parent, {
+            room: r.name,
+            spawnQueue: [],
+            spawnTick: 0,
+            parkingMatrix: [],
+            towers: {},
+            wallBuilderProcess: undefined,
+            repairerProcess: undefined,
+            linkProcess: undefined,
+            mineralHarvester: undefined,
+            mineralHauler: undefined,
+            bootstrapped: false,
+            upgradeProcess: undefined,
+            carrierProcesses: [],
+            spawnEMA: { ema: 0, time: Game.time },
+            constructionProcess: undefined,
+            bootstrapProcess: undefined,
+            defender: undefined,
+            healer: undefined
+        })
         this.memory.room = r.name;
         this.memory.spawnQueue = []
         this.memory.spawnTick = Game.time
@@ -42,24 +94,25 @@ class RoomManagerProcess extends Process implements SpawnManager, ConstructionFi
                 this.memory.towers = {}
             }
             if (!this.memory.towers[structure.id]) {
-                let towerProcess = new TowerProcess(this.kernel, this.getPID(), structure as StructureTower)
+                let towerProcess = new TowerProcess(this.kernel, this, structure as StructureTower)
                 this.kernel.addProcess(towerProcess)
-                this.memory.towers[structure.id] = towerProcess
+                this.memory.towers[structure.id] = towerProcess.getPID()
             }
         } else if ((structure.structureType == STRUCTURE_WALL || structure.structureType == STRUCTURE_RAMPART) && !this.memory.wallBuilderProcess) {
-            let wallBuilderProc = new WallBuilderProcess(this.kernel, this.getPID(), this.getPID())
+            let wallBuilderProc = new WallBuilderProcess(this.kernel, this, this)
             this.kernel.addProcess(wallBuilderProc)
             this.memory.wallBuilderProcess = wallBuilderProc.getPID()
-        } else if (structure.structureType == STRUCTURE_ROAD || structure.structureType == STRUCTURE_CONTAINER && (!this.memory.towers || this.memory.towers.length == 0) && !this.memory.repairerProcess) {
-            let repairProc = new RepairerProcess(this.kernel, this.getPID(), this.getPID(), this.memory.room)
+        } else if (structure.structureType == STRUCTURE_ROAD || structure.structureType == STRUCTURE_CONTAINER && (!this.memory.towers || Object.keys(this.memory.towers).length == 0) && !this.memory.repairerProcess) {
+
+            let repairProc = new RepairerProcess(this.kernel, this, this, this.memory.room)
             this.kernel.addProcess(repairProc)
             this.memory.repairerProcess = repairProc.getPID()
         } else if (structure.structureType == STRUCTURE_LINK && !this.memory.linkProcess) {
-            let linkProcess = new LinkManager(this.kernel, this.getPID(), this.memory.room)
+            let linkProcess = new LinkManager(this.kernel, this, this.memory.room)
             this.kernel.addProcess(linkProcess)
             this.memory.linkProcess = linkProcess.getPID()
-        } else if (structure.structureType == STRUCTURE_EXTRACTOR && !this.memory.mineralProc) {
-            let mineralProc = new MineralHarvester(this.kernel, this.getPID(), Game.rooms[this.memory.room].find(FIND_MINERALS)[0])
+        } else if (structure.structureType == STRUCTURE_EXTRACTOR && !this.memory.mineralHarvester) {
+            let mineralProc = new MineralHarvester(this.kernel, this, Game.rooms[this.memory.room].find(FIND_MINERALS)[0])
             this.memory.mineralHarvester = mineralProc.getPID()
             this.kernel.addProcess(mineralProc)
         }
@@ -70,7 +123,7 @@ class RoomManagerProcess extends Process implements SpawnManager, ConstructionFi
                 let container = mineral.pos.findInRange(FIND_STRUCTURES, 1, { filter: (x) => x.structureType == STRUCTURE_CONTAINER })[0] as StructureContainer
                 if (container) {
                     let resourceType = mineral.mineralType
-                    let mineralHaulerProc = new MineralHauler(this.kernel, this.getPID(), this.memory.room, container, resourceType)
+                    let mineralHaulerProc = new MineralHauler(this.kernel, this, this.memory.room, container, resourceType)
                     this.memory.mineralHauler = mineralHaulerProc.getPID()
                     this.kernel.addProcess(mineralHaulerProc)
                 }
@@ -79,7 +132,7 @@ class RoomManagerProcess extends Process implements SpawnManager, ConstructionFi
     }
     getMaxEnergy(from_init = false): number {
         if (Game.rooms[this.memory.room].energyCapacityAvailable == 0 && !from_init) {
-            return (this.kernel.getProcess(this.getParent()) as init).getMaxEnergy()
+            return (this.getParent() as init).getMaxEnergy()
         } else {
             return Game.rooms[this.memory.room].energyCapacityAvailable
         }
@@ -90,9 +143,9 @@ class RoomManagerProcess extends Process implements SpawnManager, ConstructionFi
     }
 
     cancelSpawn(pid: number, cancelGlobal: boolean = true): void {
-        this.memory.spawnQueue = this.memory.spawnQueue.filter((x: any) => x.pid != pid)
+        this.memory.spawnQueue = this.memory.spawnQueue.filter((x: SpawnRequest<any>) => x.pid != pid)
         if (cancelGlobal) {
-            return (this.kernel.getProcess(this.getParent()) as init).cancelSpawn(pid)
+            return (this.getParent() as init).cancelSpawn(pid)
         }
     }
 
@@ -109,12 +162,12 @@ class RoomManagerProcess extends Process implements SpawnManager, ConstructionFi
         return false;
     }
 
-    addToQueue(body: BodyPartConstant[], priority: number, targetRoom: string | undefined, spawnCallback: SpawnCallback, callbackValues: any): boolean {
+    addToQueue<T>(body: BodyPartConstant[], priority: number, targetRoom: string | undefined, spawnCallback: SpawnCallback<T>, callbackValues: T): boolean {
         if (Game.rooms[this.memory.room].energyCapacityAvailable == 0) {
-            return (this.kernel.getProcess(this.getParent()) as init).addToQueue(body, priority, this.memory.room, spawnCallback, callbackValues)
+            return (this.getParent() as init).addToQueue(body, priority, this.memory.room, spawnCallback, callbackValues)
         }
         this.memory.spawnQueue.push({ body: body, priority: priority, pid: spawnCallback.getPID(), callbackValues: callbackValues })
-        this.memory.spawnQueue.sort((a: any, b: any) => (a.priority > b.priority ? -1 : 1))
+        this.memory.spawnQueue.sort((a: SpawnRequest<any>, b: SpawnRequest<any>) => (a.priority > b.priority ? -1 : 1))
         return true
     }
 
@@ -132,20 +185,20 @@ class RoomManagerProcess extends Process implements SpawnManager, ConstructionFi
         }
 
         if (!this.memory.bootstrapped) {
-            let bootstrapProcess = new RoomBootstrapProcess(this.kernel, this.getPID(), this.memory.room)
+            let bootstrapProcess = new RoomBootstrapProcess(this.kernel, this, this.memory.room)
             this.kernel.addProcess(bootstrapProcess)
             let sources = Game.rooms[this.memory.room].find(FIND_SOURCES)
 
-            let upgradeProcess = new UpgradeProcess(this.kernel, this.getPID(), Game.rooms[this.memory.room].controller!.id)
+            let upgradeProcess = new UpgradeProcess(this.kernel, this, Game.rooms[this.memory.room].controller!.id)
             this.kernel.addProcess(upgradeProcess)
             this.memory.upgradeProcess = upgradeProcess.getPID()
             for (let x of sources) {
-                let harvestProcess = new HarvesterProcess(this.kernel, this.getPID(), this.getPID(), x);
+                let harvestProcess = new HarvesterProcess(this.kernel, this, this, x);
                 this.kernel.addProcess(harvestProcess)
             }
-            let carrierProcess = new CarrierProcess(this.kernel, this.getPID());
+            let carrierProcess = new CarrierProcess(this.kernel, this, this, this.memory.room);
             this.kernel.addProcess(carrierProcess)
-            let carrierProcess2 = new CarrierProcess(this.kernel, this.getPID());
+            let carrierProcess2 = new CarrierProcess(this.kernel, this, this, this.memory.room);
             carrierProcess2.sleep(Math.floor(CREEP_LIFE_TIME / 2))
             this.kernel.addProcess(carrierProcess2)
             this.memory.carrierProcesses = [carrierProcess.getPID(), carrierProcess2.getPID()]
@@ -162,23 +215,17 @@ class RoomManagerProcess extends Process implements SpawnManager, ConstructionFi
                     if (spawnReturnCode != 0) {
                         console.log("WARNING: " + spawnReturnCode + " returned when executing request for room " + this.memory.room)
                     } else {
-                        (this.kernel.getProcess(this.memory.spawnQueue[0].pid) as unknown as SpawnCallback).onCreepSpawned(creepName, this.memory.spawnQueue[0].callbackValues);
+                        (this.kernel.getProcess(this.memory.spawnQueue[0].pid) as SpawnCallback<any>).onCreepSpawned(creepName, this.memory.spawnQueue[0].callbackValues);
                         this.memory.spawnQueue.splice(0, 1)
                     }
                 }
             }
         }
-        if (!this.memory.spawnEMA) {
-            this.memory.spawnEMA = {}
-            this.memory.spawnEMA.ema = this.memory.spawnQueue.length
-            this.memory.spawnEMA.time = Game.time
-        } else {
-            this.memory.spawnEMA.ema = this.memory.spawnEMA.ema * (1 - SPAWN_EMA_ALPHA) + this.memory.spawnQueue.length * SPAWN_EMA_ALPHA
-        }
+        this.memory.spawnEMA.ema = this.memory.spawnEMA.ema * (1 - SPAWN_EMA_ALPHA) + this.memory.spawnQueue.length * SPAWN_EMA_ALPHA
         if (Game.time % 5 == 0) {
             let sites = Game.rooms[this.memory.room].find(FIND_CONSTRUCTION_SITES)
             if (sites.length > 0 && (!this.memory.constructionProcess || !this.kernel.getProcess(this.memory.constructionProcess))) {
-                let constructionProcess = new BuilderProcess(this.kernel, this.getPID(), this.getParent(), this.memory.room, this)
+                let constructionProcess = new BuilderProcess(this.kernel, this, this.getParent() as init, this.memory.room, this)
                 this.kernel.addProcess(constructionProcess)
                 this.memory.constructionProcess = constructionProcess.getPID()
             } else if (sites.length == 0) {
@@ -205,10 +252,10 @@ class RoomManagerProcess extends Process implements SpawnManager, ConstructionFi
             }
 
             console.log("Average Energy Flow: " + energySum)
-            if (energySum > 10 || energySum < 1) {
-                let wallBuilder = (this.kernel.getProcess(this.memory.wallBuilderProcess) as WallBuilderProcess)
-                let upgrader = (this.kernel.getProcess(this.memory.upgradeProcess) as UpgradeProcess)
-                let construction = this.kernel.getProcess(this.memory.constructionProcess) as BuilderProcess
+            if (energySum > 2 || energySum < 1) {
+                let wallBuilder = this.memory.wallBuilderProcess ? (this.kernel.getProcess(this.memory.wallBuilderProcess) as WallBuilderProcess) : undefined;
+                let upgrader = this.kernel.getProcess(this.memory.upgradeProcess!) as UpgradeProcess;
+                let construction = this.memory.constructionProcess ? this.kernel.getProcess(this.memory.constructionProcess) as BuilderProcess : undefined;
                 let targetEnergyConsumption = energySum
                 targetEnergyConsumption += upgrader.getAverageEnergyConsumption()
                 if (wallBuilder) targetEnergyConsumption += wallBuilder.getAverageEnergyConsumption()
@@ -232,17 +279,17 @@ class RoomManagerProcess extends Process implements SpawnManager, ConstructionFi
             }
         }
         if (Game.time % 50 == 0 && Game.rooms[this.memory.room].find(FIND_MY_CREEPS).length == 0 && (!this.memory.bootstrapProcess || !this.kernel.getProcess(this.memory.bootstrapProcess)) && Game.rooms[this.memory.room].controller!.level > 1) {
-            let bootstrapProcess = new RoomBootstrapProcess(this.kernel, this.getPID(), this.memory.room)
+            let bootstrapProcess = new RoomBootstrapProcess(this.kernel, this, this.memory.room)
             this.kernel.addProcess(bootstrapProcess)
             this.memory.bootstrapProcess = bootstrapProcess.getPID()
         }
         if (Game.rooms[this.memory.room].find(FIND_HOSTILE_CREEPS).length > 0) {
             let hostileAttackParts = _.sum(Game.rooms[this.memory.room].find(FIND_HOSTILE_CREEPS).map((c) => _.sum(_.filter(c.body, (c) => c.type == ATTACK || c.type == HEAL || c.type == RANGED_ATTACK))))
             if (!this.memory.defender) {
-                let defenseProcess = new AttackCreepProcess(this.kernel, this.getPID(), this.getPID(), Math.max(hostileAttackParts * 2, 6), [TOUGH, ATTACK, MOVE], this.memory.room, undefined)
+                let defenseProcess = new AttackCreepProcess(this.kernel, this, this, Math.max(hostileAttackParts * 2, 6), [TOUGH, ATTACK, MOVE], this.memory.room, undefined)
                 this.memory.defender = defenseProcess.getPID()
                 this.kernel.addProcess(defenseProcess)
-                let healingProcess = new HealingProcess(this.kernel, this.getPID(), this.getPID(), Math.max(hostileAttackParts * 2, 6), [TOUGH, HEAL, MOVE], this.memory.room, undefined)
+                let healingProcess = new HealingProcess(this.kernel, this, this, Math.max(hostileAttackParts * 2, 6), [TOUGH, HEAL, MOVE], this.memory.room, undefined)
                 this.memory.healer = healingProcess.getPID()
                 this.kernel.addProcess(healingProcess)
             }
@@ -253,7 +300,7 @@ class RoomManagerProcess extends Process implements SpawnManager, ConstructionFi
         } else if (this.memory.defender) {
             this.kernel.getProcess(this.memory.defender)?.shutdown()
             this.memory.defender = undefined
-            this.kernel.getProcess(this.memory.healer)?.shutdown()
+            this.kernel.getProcess(this.memory.healer!)?.shutdown()
             this.memory.healer = undefined
         }
     }

@@ -7,11 +7,14 @@ import { spawn } from "child_process";
 import Hauler from "processes/Hauler";
 import init from "init";
 import PillagerProcess from "processes/combat/PillagerProecss";
+import { SpawnManager } from "SpawnManager";
+
 export class FlagHandler extends Process {
+
+    constructor(kernel: Kernel, parent: Process) {
+        super(kernel, parent, {});
+    }
     run(): void {
-        if (!Memory.flags) {
-            Memory.flags = {}
-        }
         for (let x in Memory.flags) {
             if (!(x in Game.flags) && Memory.flags[x].pid) {
                 this.kernel.getProcess(Memory.flags[x].pid!)?.shutdown()
@@ -26,7 +29,7 @@ export class FlagHandler extends Process {
                 }
             } else {
                 if (!Game.flags[x].memory.pid && FlagHandlerRegistry.get(x)) {
-                    let proc = FlagHandlerRegistry.get(x)!(this.kernel, this.getPID(), this.getParent(), Game.flags[x])
+                    let proc = FlagHandlerRegistry.get(x)!(this.kernel, this, this.getParent() as SpawnManager, Game.flags[x])
                     this.kernel.addProcess(proc)
                     Game.flags[x].memory.pid = proc.getPID()
                 }
@@ -43,13 +46,13 @@ export class FlagHandler extends Process {
 ProcessRegistry.register("FlagHandler", FlagHandler)
 
 export default class FlagHandlerRegistry {
-    private static handlerMap = new Map<string, (kernel: Kernel, parent: number, spawnManager: number, f: Flag) => Process>()
+    private static handlerMap = new Map<string, (kernel: Kernel, parent: Process, spawnManager: SpawnManager, f: Flag) => Process>()
 
-    static register(prefix: string, handler: (kernel: Kernel, parent: number, spawnManager: number, f: Flag) => Process) {
+    static register(prefix: string, handler: (kernel: Kernel, parent: Process, spawnManager: SpawnManager, f: Flag) => Process) {
         this.handlerMap.set(prefix.toLowerCase(), handler)
     }
 
-    static get(flagname: string): ((kernel: Kernel, parent: number, spawnManager: number, f: Flag) => Process) | undefined {
+    static get(flagname: string): ((kernel: Kernel, parent: Process, spawnManager: SpawnManager, f: Flag) => Process) | undefined {
         for (let x of this.handlerMap.keys()) {
             if (flagname.toLocaleLowerCase().startsWith(x)) {
                 return this.handlerMap.get(x)!
@@ -66,6 +69,6 @@ FlagHandlerRegistry.register("clear", (kernel, parent, spawnManager, flag) =>
 
 FlagHandlerRegistry.register("pillage", (Kernel, parent, spawnManager, flag): Process => {
     let destinationRoom = Object.keys(Game.rooms).filter(rn => Game.rooms[rn].controller?.my).sort((a, b) => Game.map.getRoomLinearDistance(a, flag.pos.roomName) - Game.map.getRoomLinearDistance(b, flag.pos.roomName))[0];
-    let destinationRoomProc = (Kernel.getProcess(0) as init).getRoomManager(destinationRoom)!
+    let destinationRoomProc = Kernel.getProcess((Kernel.getProcess(0 as Pid<init>) as init).getRoomManager(destinationRoom)!)!
     return new PillagerProcess(Kernel, parent, destinationRoomProc, flag.pos.roomName, destinationRoom, 5);
 })

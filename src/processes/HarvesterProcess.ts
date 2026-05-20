@@ -1,12 +1,21 @@
 import Kernel from "Kernel"
-import { ProcessRegistry } from "../Process"
+import Process, { ProcessRegistry } from "../Process"
 import CreepProcess from "./CreepProcess"
 import { EnergyProducer } from "utils/EnergyBalance";
 import { moveToRoom } from "utils/creepUtils";
 import { forEachRight } from "lodash";
+import { SpawnManager } from "SpawnManager";
 
 const ENERGY_MINING_ALPHA = 0.01
-export default class HarvesterProcess extends CreepProcess implements EnergyProducer {
+interface HarvesterProcessMemory {
+    source: Id<Source>,
+    freeSpaces: number
+    link: Id<StructureLink> | undefined
+    minedEnergy: number
+    miningTimer: number
+    container: RoomPosition | undefined
+}
+export default class HarvesterProcess extends CreepProcess<HarvesterProcessMemory, {}> implements EnergyProducer {
 
     generateSpawnRequest(): [ratio: BodyPartConstant[], targetScale: number, baseparts: (BodyPartConstant[] | undefined), maxCreeps: (number | undefined)] {
         if (Game.getObjectById(this.memory.source) && !this.memory.freeSpaces) {
@@ -27,12 +36,22 @@ export default class HarvesterProcess extends CreepProcess implements EnergyProd
         return [[WORK], 6, [MOVE], this.memory.freeSpaces]
     }
 
+    initCreepMemory(): {} {
+        return {}
+    }
+
     getSpawningPriority(): number {
         return 200
     }
-    constructor(kernel: Kernel, parent: number, spawnManager: number, source: Source) {
-        super(kernel, parent, spawnManager);
-        this.memory.source = source.id
+    constructor(kernel: Kernel, parent: Process, spawnManager: SpawnManager, source: Source) {
+        super(kernel, parent, spawnManager, {
+            source: source.id,
+            freeSpaces: 0,
+            link: undefined,
+            minedEnergy: 0,
+            miningTimer: 0,
+            container: undefined
+        });
         this.findAdjacentContainers()
         this.resetEnergyProduction()
     }
@@ -89,7 +108,7 @@ export default class HarvesterProcess extends CreepProcess implements EnergyProd
         }
         let link = (Game.getObjectById(this.memory.source) as Source).pos.findInRange(FIND_STRUCTURES, 2, { filter: (x) => x.structureType == STRUCTURE_LINK })
         if (link.length != 0) {
-            this.memory.link = link[0].id
+            this.memory.link = link[0].id as Id<StructureLink>
             this.checkSpawning()
         } else {
             this.memory.link = undefined

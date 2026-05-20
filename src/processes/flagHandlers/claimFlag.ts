@@ -1,17 +1,23 @@
 import Kernel from "Kernel";
 import Process, { ProcessRegistry } from "Process";
 import CreepProcess from "processes/CreepProcess";
+import { SpawnManager } from "SpawnManager";
 import { moveToRoom } from "utils/creepUtils";
 
-export default class ClaimProcess extends CreepProcess {
-    constructor(kernel: Kernel, parent: number, spawnManager: number, flag: Flag) {
-        super(kernel, parent, spawnManager)
-        this.memory.room = flag.pos.roomName
+
+interface ClaimProcessMemory {
+    room: string
+}
+
+export default class ClaimProcess extends CreepProcess<ClaimProcessMemory, {}>  {
+
+    constructor(kernel: Kernel, parent: Process, spawnManager: SpawnManager, flag: Flag) {
+        super(kernel, parent, spawnManager, { room: flag.pos.roomName })
     }
     getSpawningPriority(): number {
         return 0
     }
-    runCreep(c: Creep, creepMemory: any): void {
+    runCreep(c: Creep): void {
         if (this.memory.room in Game.rooms && Game.rooms[this.memory.room].controller?.my) {
             this.shutdown()
             return
@@ -39,6 +45,10 @@ export default class ClaimProcess extends CreepProcess {
     }
     getType(): string {
         return "ClaimProcess"
+    }
+
+    initCreepMemory(): {} {
+        return {}
     }
 
 }

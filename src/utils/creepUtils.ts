@@ -4,9 +4,7 @@ export function moveToRoom(creep: Creep, roomName: string) {
     }
     if (!roomName) throw new Error("Invalid Room")
     if (!creep.memory.roomPath || creep.memory.roomPath.destination != roomName || creep.memory.roomPath.path.length == 0) {
-        creep.memory.roomPath = {}
-        creep.memory.roomPath.destination = roomName
-        creep.memory.roomPath.path = Game.map.findRoute(creep.room.name, roomName, {
+        let path = Game.map.findRoute(creep.room.name, roomName, {
             routeCallback(roomName) {
                 let parsed = /^[WE]([0-9]+)[NS]([0-9]+)$/.exec(roomName)!;
                 let isHighway = (+parsed[1] % 10 === 0) ||
@@ -24,6 +22,8 @@ export function moveToRoom(creep: Creep, roomName: string) {
                 }
             }
         })
+        if (path == -2) throw new Error("Attempt to path to inaccessible room")
+        creep.memory.roomPath = { path: path, destination: roomName }
     }
     if (creep.memory.roomPath.path.length == 0) {
         creep.memory.roomPath = undefined
@@ -44,8 +44,8 @@ export function moveToRoom(creep: Creep, roomName: string) {
 }
 
 
-export function gatherEnergy(creep: Creep, creepMemory: any): number {
-    let fetchTarget = Game.getObjectById(creepMemory.__fetchTarget)
+export function gatherEnergy(creep: Creep, creepMemory: { __fetchTarget: undefined | Id<_HasId> }): number {
+    let fetchTarget = creepMemory.__fetchTarget ? Game.getObjectById(creepMemory.__fetchTarget) : undefined
     if (!fetchTarget
         || (fetchTarget instanceof Structure
             && (fetchTarget as StructureContainer).store[RESOURCE_ENERGY] < 50)

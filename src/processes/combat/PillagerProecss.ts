@@ -1,14 +1,35 @@
 import { open } from "fs";
 import Kernel from "Kernel";
-import { ProcessRegistry } from "Process";
+import Process, { ProcessRegistry } from "Process";
 import CreepProcess from "processes/CreepProcess";
+import { SpawnManager } from "SpawnManager";
 import { moveToRoom } from "utils/creepUtils";
 import { EnergyConsumer, EnergyProducer } from "utils/EnergyBalance";
 
-export default class PillagerProcess extends CreepProcess {
+interface PillagerProcessMemory {
+    source: string,
+    destination: string,
+    scale: number
+}
 
-    constructor(kernel: Kernel, parent: number, spawnManager: number, source: string, destination: string, scale: number) {
-        super(kernel, parent, spawnManager)
+enum PillagerCreepState {
+    DEPOSITING = 0,
+    FETCHING = 1
+}
+interface PillagerCreepMemory {
+    state: PillagerCreepState
+}
+export default class PillagerProcess extends CreepProcess<PillagerProcessMemory, PillagerCreepMemory> {
+    initCreepMemory(): PillagerCreepMemory {
+        return { state: PillagerCreepState.FETCHING }
+    }
+
+    constructor(kernel: Kernel, parent: Process, spawnManager: SpawnManager, source: string, destination: string, scale: number) {
+        super(kernel, parent, spawnManager, {
+            source: source,
+            destination: destination,
+            scale: scale
+        })
         this.memory.source = source;
         this.memory.destination = destination;
         this.memory.scale = scale
@@ -16,9 +37,8 @@ export default class PillagerProcess extends CreepProcess {
     getSpawningPriority(): number {
         return 0;
     }
-    runCreep(c: Creep, creepMemory: any): void {
-        if (!creepMemory.state) creepMemory.state = c.store.getFreeCapacity() == 0 ? "depositing" : "fetching";
-        if (creepMemory.state == "depositing") {
+    runCreep(c: Creep, creepMemory: PillagerCreepMemory): void {
+        if (creepMemory.state == PillagerCreepState.DEPOSITING) {
             if (c.room.name != this.memory.destination || c.pos.x == 49 || c.pos.x == 0 || c.pos.y == 49 || c.pos.y == 0) {
                 moveToRoom(c, this.memory.destination)
             } else {
@@ -41,13 +61,13 @@ export default class PillagerProcess extends CreepProcess {
                     }
                 }
             }
-            if (c.store.getUsedCapacity() == 0) creepMemory.state = "fetching"
+            if (c.store.getUsedCapacity() == 0) creepMemory.state = PillagerCreepState.FETCHING
         } else {
             if (c.room.name != this.memory.source) {
                 moveToRoom(c, this.memory.source)
             } else {
 
-                if (c.store.getFreeCapacity() == 0) creepMemory.state = "depositing"
+                if (c.store.getFreeCapacity() == 0) creepMemory.state = PillagerCreepState.DEPOSITING
                 let source = c.pos.findClosestByRange(FIND_DROPPED_RESOURCES)
                 if (!source) {
                     let container: StructureContainer = c.pos.findClosestByRange(FIND_STRUCTURES, { filter: (s) => s.structureType == STRUCTURE_CONTAINER && (s as StructureContainer).store.getUsedCapacity() > 0 })!
@@ -68,7 +88,7 @@ export default class PillagerProcess extends CreepProcess {
                 }
                 let result = c.pickup(source);
                 if (result == ERR_NOT_IN_RANGE) c.moveTo(source);
-                if (c.store.getFreeCapacity() == 0) creepMemory.state = "depositing"
+                if (c.store.getFreeCapacity() == 0) creepMemory.state = PillagerCreepState.DEPOSITING
             }
         }
     }

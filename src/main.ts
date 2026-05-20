@@ -1,11 +1,11 @@
 import init from "init";
 import Kernel, { PROFILER_ALPHA } from "Kernel";
-import { memoize } from "lodash";
+import Process from "Process";
 import AttackCreepProcess from "processes/combat/AttackCreepProcess";
 import HealingProcess from "processes/combat/HealingProcess";
 import RemoteMiner from "processes/RemoteMiner";
-import RoomManagerProcess from "processes/RoomManagerProcess";
 import { ErrorMapper } from "utils/ErrorMapper";
+
 declare global {
   /*
     Example types, expand on these or remove them and add your own.
@@ -17,47 +17,40 @@ declare global {
   */
   // Memory extension samples
   interface Attack {
-    healerProcess: number,
-    attackProcess: number,
+    healerProcess: Pid<HealingProcess>,
+    attackProcess: Pid<AttackCreepProcess>,
   }
   interface Memory {
     uuid: number;
 
-    log: any;
-    processes: Record<number, SerializedProcess>;
+    processes: Record<number, SerializedProcess<Object>>;
     pid_counter: number,
     profilingData: { [processName: string]: { lastRan: number, averageCPU: number } }
     attacks: { [roomName: string]: Attack }
 
   }
   interface FlagMemory {
-    pid: number | undefined
+    pid: Pid<Process> | undefined
   }
 
   interface CreepMemory {
-    [string: string]: any
+    roomPath: undefined | { destination: string, path: { exit: ExitConstant, room: string }[] }
   }
 
-  // Syntax for adding proprties to `global` (ex "global.log")
+  // Syntax for adding proprties to `global` 
   namespace NodeJS {
     interface Global {
-      log: any;
     }
   }
 
-  interface Message {
-    from: number;
-    type: string;
-    payload: any
-  }
-  interface SerializedProcess {
+  interface SerializedProcess<T extends Object> {
     pid: number,
     type: string
     priority: number,
     parent: number,
     sleepUntil: number
     lastRan: number
-    memory: any
+    memory: T
     children: number[]
     averageCPUUsage: number
   }
@@ -83,7 +76,6 @@ declare global {
 
 
 }
-
 
 const sourceStructureCache: { [id: string]: boolean } = {};
 
@@ -116,8 +108,8 @@ export const loop = ErrorMapper.wrapLoop(() => {
   global.remoteMine = function (parentRoom: string, childRoom: string) {
     let kernel = new Kernel();
     kernel.deserializeProcesses();
-    let parentRoomManager = kernel.getProcess((kernel.getProcess(0)! as init).getRoomManager(parentRoom)!)!
-    kernel.addProcess(new RemoteMiner(kernel, parentRoomManager.getPID(), parentRoom, childRoom))
+    let parentRoomManager = kernel.getProcess((kernel.getProcess(0 as Pid<init>)! as init).getRoomManager(parentRoom)!)!
+    kernel.addProcess(new RemoteMiner(kernel, parentRoomManager, parentRoom, childRoom))
     kernel.serializeProcesses()
   }
 
@@ -129,9 +121,9 @@ export const loop = ErrorMapper.wrapLoop(() => {
       (kernel.getProcess(Memory.attacks[roomName].attackProcess) as AttackCreepProcess).setScale(attack);
       (kernel.getProcess(Memory.attacks[roomName].healerProcess) as HealingProcess).setScale(heal)
     } else {
-      let attackProc = new AttackCreepProcess(kernel, 0, 0, attack, [TOUGH, TOUGH, ATTACK, MOVE, MOVE, MOVE], roomName, undefined)
+      let attackProc = new AttackCreepProcess(kernel, kernel.getProcess(0 as Pid<init>)!, kernel.getProcess(0 as Pid<init>)!, attack, [TOUGH, TOUGH, ATTACK, MOVE, MOVE, MOVE], roomName, undefined)
       kernel.addProcess(attackProc)
-      let healerProcess = new HealingProcess(kernel, 0, 0, heal, [TOUGH, TOUGH, HEAL, MOVE, MOVE, MOVE], roomName, undefined)
+      let healerProcess = new HealingProcess(kernel, kernel.getProcess(0 as Pid<init>)!, kernel.getProcess(0 as Pid<init>)!, heal, [TOUGH, TOUGH, HEAL, MOVE, MOVE, MOVE], roomName, undefined)
       kernel.addProcess(healerProcess)
       Memory.attacks[roomName] = { attackProcess: attackProc.getPID(), healerProcess: healerProcess.getPID() }
     }
@@ -176,7 +168,7 @@ export const loop = ErrorMapper.wrapLoop(() => {
   let kernel = new Kernel();
   kernel.deserializeProcesses()
   if (kernel.getNumberOfProcesses() == 0) {
-    kernel.addProcess(new init(kernel, 0));
+    kernel.addProcess(new init(kernel));
   }
   kernel.runProcesses();
   kernel.serializeProcesses()

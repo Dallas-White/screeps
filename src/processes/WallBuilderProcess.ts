@@ -1,22 +1,25 @@
-import { ProcessRegistry } from "Process";
+import Process, { ProcessRegistry } from "Process";
 import EnergyCreepProcess, { actResult } from "./EnergyCreepProcess";
 import CreepProcess from "./CreepProcess";
 import Kernel from "Kernel";
 import RoomManagerProcess from "./RoomManagerProcess";
 
-export default class WallBuilderProcess extends EnergyCreepProcess {
+export default class WallBuilderProcess extends EnergyCreepProcess<{ scale: number }> {
     generateSpawnRequest(): [ratio: BodyPartConstant[], targetScale: number, baseparts: (BodyPartConstant[] | undefined), maxCreeps: (number | undefined)] {
         return [[MOVE, WORK, CARRY], this.memory.scale, [], undefined]
     }
-    constructor(kernel: Kernel, parent: number, roomManager: number) {
-        super(kernel, parent, roomManager, (kernel.getProcess(parent) as RoomManagerProcess).getRoomName())
-        this.memory.scale = 3
+    constructor(kernel: Kernel, parent: Process, roomManager: RoomManagerProcess) {
+        super(kernel, parent, roomManager, roomManager.getRoomName(), { scale: 3 })
     }
 
     act(creep: Creep, target: _HasId): actResult {
-        if (creep.repair(target as Structure) == ERR_NOT_IN_RANGE) {
+        if ((target as Structure).hits == (target as Structure).hitsMax) return actResult.SELECTNEW
+        let repairCode = creep.repair(target as Structure)
+        if (repairCode == ERR_NOT_IN_RANGE) {
             creep.moveTo(target as Structure)
             return actResult.CONTINUE
+        } else if (repairCode != OK) {
+            return actResult.SELECTNEW
         }
         if (Game.time % 50 == 0) return actResult.SELECTNEW
         return actResult.CONTINUE;

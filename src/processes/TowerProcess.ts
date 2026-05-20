@@ -1,11 +1,17 @@
 import Kernel from "Kernel";
 import Process, { ProcessRegistry } from "Process";
 
-export default class TowerProcess extends Process {
+interface TowerProcessMemory {
+    tower: Id<StructureTower>
+    repairing: boolean
+}
+export default class TowerProcess extends Process<TowerProcessMemory> {
 
-    constructor(kernel: Kernel, parent: number, tower: StructureTower) {
-        super(kernel, parent)
-        this.memory.tower = tower.id
+    constructor(kernel: Kernel, parent: Process, tower: StructureTower) {
+        super(kernel, parent, {
+            tower: tower.id,
+            repairing: false,
+        })
     }
     run(): void {
         let tower = Game.getObjectById(this.memory.tower) as StructureTower

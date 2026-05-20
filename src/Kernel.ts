@@ -94,28 +94,29 @@ export default class Kernel {
         this.runProcesses()
     }
 
-    addProcess(p: Process) {
+    addProcess<T extends Process>(p: T): Pid<T> {
         this.processes.set(p.getPID(), p)
-        this.processes.get(p.getParent())?.children.push(p.getPID())
+        this.processes.get(p.getParent().getPID())?.children.push(p.getPID())
+        return p.getPID()
     }
 
-    killProcess(pid: number) {
+    killProcess(pid: Pid) {
         let process = this.processes.get(pid)
         if (!process) return
         for (let child of process!.getChildren()) {
-            this.processes.get(child)?.shutdown()
+            this.killProcess(child)
         }
-        this.processes.get(this.processes.get(pid)?.getParent()!)?.removeChild(pid)
+        this.processes.get(process.getParent().getPID()!)?.removeChild(pid)
         this.processes.delete(pid)
 
     }
 
-    shutdownProcess(pid: number) {
+    shutdownProcess(pid: Pid) {
         this.processes.get(pid)?.shutdown()
     }
 
-    getProcess(pid: number): Process | undefined {
-        return this.processes.get(pid)
+    getProcess<T extends Process>(pid: Pid<T>): T | undefined {
+        return this.processes.get(pid) as T
     }
 
     getNumberOfProcesses(): number {

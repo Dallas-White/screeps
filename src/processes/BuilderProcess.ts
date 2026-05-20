@@ -1,27 +1,55 @@
-import { ProcessRegistry } from "Process";
+import Process, { ProcessRegistry } from "Process";
 import CreepProcess from "./CreepProcess";
 import Kernel from "Kernel";
 import EnergyCreepProcess, { actResult } from "./EnergyCreepProcess";
 import { Position } from "source-map";
 import { max } from "lodash";
 import { gatherEnergy, moveToRoom } from "utils/creepUtils";
+import { SpawnManager } from "SpawnManager";
 
 const CONSTRUCTION_SITE_PRIORITES: Array<StructureConstant> = [STRUCTURE_SPAWN, STRUCTURE_EXTENSION, STRUCTURE_CONTAINER, STRUCTURE_WALL, STRUCTURE_RAMPART]
 
-export interface ConstructionFinishedCallback {
+export interface ConstructionFinishedCallback extends Process {
     onConstructionFinished(type: StructureConstant, pos: RoomPosition): void
-    getPID(): number
 }
-export default class BuilderProcess extends CreepProcess {
+
+
+interface BuilderProcessMemory {
+    scale: number,
+    target: Id<ConstructionSite> | undefined,
+    callback: Pid<ConstructionFinishedCallback> | undefined
+    room: string
+    targetStructureType: StructureConstant | undefined,
+    targetStructurePos: RoomPosition | undefined
+}
+
+enum BuilderCreepState {
+    FETCHING,
+    BUILDING
+}
+interface BuilderCreepMemory {
+    state: BuilderCreepState,
+    __fetchTarget: Id<_HasId> | undefined
+}
+
+
+export default class BuilderProcess extends CreepProcess<BuilderProcessMemory, BuilderCreepMemory> {
+    initCreepMemory(): BuilderCreepMemory {
+        return { state: BuilderCreepState.FETCHING, __fetchTarget: undefined }
+    }
 
     onCreepDeath(): void {
     }
 
-    constructor(kernel: Kernel, parent: number, spawnManager: number, roomName: string, callback: ConstructionFinishedCallback | undefined = undefined) {
-        super(kernel, parent, spawnManager)
-        this.memory.room = roomName;
-        this.memory.scale = 5
-        this.memory.callback = callback?.getPID();
+    constructor(kernel: Kernel, parent: Process, spawnManager: SpawnManager, roomName: string, callback: ConstructionFinishedCallback | undefined = undefined) {
+        super(kernel, parent, spawnManager, {
+            scale: 5,
+            callback: callback?.getPID(),
+            room: roomName,
+            target: undefined,
+            targetStructureType: undefined,
+            targetStructurePos: undefined
+        })
     }
 
     generateSpawnRequest(): [ratio: BodyPartConstant[], targetScale: number, baseparts: (BodyPartConstant[] | undefined), maxCreeps: (number | undefined)] {
@@ -47,22 +75,22 @@ export default class BuilderProcess extends CreepProcess {
         return 1
     }
 
-    runCreep(c: Creep, creepMemory: any): void {
+    runCreep(c: Creep, creepMemory: BuilderCreepMemory): void {
         if (c.room.name != this.memory.room) {
             moveToRoom(c, this.memory.room)
         }
         if (!creepMemory.state) {
-            creepMemory.state = "fetching"
+            creepMemory.state = BuilderCreepState.FETCHING
         }
-        if (creepMemory.state == "fetching") {
+        if (creepMemory.state == BuilderCreepState.FETCHING) {
             if (c.store.getFreeCapacity() == 0) {
-                creepMemory.state = "building"
+                creepMemory.state = BuilderCreepState.BUILDING
                 return;
             }
             this.logEnergyConsumption(gatherEnergy(c, creepMemory))
-        } else if (creepMemory.state == "building") {
+        } else if (creepMemory.state == BuilderCreepState.BUILDING) {
             if (c.store.getUsedCapacity() == 0) {
-                creepMemory.state = "fetching"
+                creepMemory.state = BuilderCreepState.FETCHING
                 return;
             }
             if (!this.memory.target) {
@@ -71,12 +99,12 @@ export default class BuilderProcess extends CreepProcess {
                     return;
                 }
             }
-            let targetObj = Game.getObjectById(this.memory.target)
+            let targetObj = Game.getObjectById(this.memory.target!)
             if (!targetObj) {
                 if (this.memory.callback) {
                     try {
-                        (this.kernel.getProcess(this.memory.callback) as unknown as ConstructionFinishedCallback).onConstructionFinished(this.memory.targetStructureType,
-                            new RoomPosition(this.memory.targetStructurePos.x, this.memory.targetStructurePos.y, this.memory.targetStructurePos.roomName));
+                        (this.kernel.getProcess(this.memory.callback) as unknown as ConstructionFinishedCallback).onConstructionFinished(this.memory.targetStructureType!,
+                            new RoomPosition(this.memory.targetStructurePos!.x, this.memory.targetStructurePos!.y, this.memory.targetStructurePos!.roomName));
                     } catch (e) {
                         console.log(e);
                     }

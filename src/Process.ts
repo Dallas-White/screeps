@@ -2,21 +2,26 @@ import type Kernel from "Kernel";
 
 const memoryAverageFactor = 0.2
 
-abstract class Process {
-    private pid: number
-    private parent: number
+declare global {
+    type Pid<T extends Process = Process> = number & Tag.OpaqueTag<T>
+}
+
+abstract class Process<T extends Object = {}> {
+    private pid: Pid<this>
+    private parent: Pid
     kernel: Kernel
     priority: number = 1
     lastRan: number = 0
     sleepUntil: number = 0
     private averageCPUUsage = 0
-    children: number[] = []
-    protected memory: any = {}
+    children: Pid[] = []
+    protected memory: T;
 
-    constructor(kernel: Kernel, parent: number) {
-        this.pid = kernel.getAvailablePID();
+    constructor(kernel: Kernel, parent: Process | 0, memory: T) {
+        this.pid = kernel.getAvailablePID() as Pid<this>;
         this.kernel = kernel
-        this.parent = parent
+        this.parent = parent == 0 ? 0 as Pid : parent.getPID()
+        this.memory = memory
     }
 
 
@@ -28,11 +33,11 @@ abstract class Process {
         return this.averageCPUUsage;
     }
 
-    getPID(): number {
+    getPID(): Pid<this> {
         return this.pid;
     }
 
-    setPID(pid: number) {
+    setPID(pid: Pid<this>) {
         this.pid = pid
     }
 
@@ -48,7 +53,7 @@ abstract class Process {
 
     abstract getType(): string;
 
-    serialize(): SerializedProcess {
+    serialize(): SerializedProcess<T> {
         return {
             pid: this.pid,
             type: this.getType(),
@@ -62,16 +67,16 @@ abstract class Process {
         };
     }
 
-    loadFromSerialized(data: SerializedProcess, kernel: Kernel) {
-        this.pid = data.pid;
+    loadFromSerialized(data: SerializedProcess<T>, kernel: Kernel) {
+        this.pid = data.pid as Pid<this>;
         this.priority = data.priority;
         this.lastRan = data.lastRan;
         this.sleepUntil = data.sleepUntil;
         this.memory = data.memory || {};
         this.kernel = kernel;
-        this.children = data.children
+        this.children = data.children as Pid[]
         this.averageCPUUsage = data.averageCPUUsage;
-        this.parent = data.parent
+        this.parent = data.parent as Pid
     }
     sleep(ticks: number = 0) {
         if (!ticks)
@@ -80,20 +85,20 @@ abstract class Process {
             this.sleepUntil = Game.time + ticks;
     }
 
-    getChildren(): number[] {
+    getChildren(): Pid<Process>[] {
         return this.children;
     }
 
-    addChild(child: number) {
+    addChild(child: Pid<Process>) {
         this.children.push(child);
     }
 
-    removeChild(child: number) {
+    removeChild(child: Pid<Process>) {
         this.children.splice(this.children.indexOf(child), 1)
     }
 
-    getParent(): number {
-        return this.parent;
+    getParent(): Process {
+        return this.kernel.getProcess(this.parent)!;
     }
 
 }
@@ -107,7 +112,7 @@ export class ProcessRegistry {
         this.registry.set(type, cls);
     }
 
-    static deserialize(data: SerializedProcess, kernel: Kernel): Process {
+    static deserialize(data: SerializedProcess<Object>, kernel: Kernel): Process {
         const cls = this.registry.get(data.type);
         if (!cls) {
             throw new Error(`Unknown process type: ${data.type}`);

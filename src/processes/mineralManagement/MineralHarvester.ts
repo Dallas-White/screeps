@@ -1,19 +1,29 @@
 import Kernel from "Kernel";
 import { ProcessRegistry } from "Process";
 import CreepProcess from "processes/CreepProcess";
+import { SpawnManager } from "SpawnManager";
 
+interface MinerlaHarvesterMemory {
+    extractor: Id<Mineral>
+    container: RoomPosition | undefined
+}
 
-export default class MineralHarvester extends CreepProcess {
-    constructor(kernel: Kernel, parent: number, mineral: Mineral) {
-        super(kernel, parent, parent)
+export default class MineralHarvester extends CreepProcess<MinerlaHarvesterMemory> {
+
+    constructor(kernel: Kernel, parent: SpawnManager, mineral: Mineral) {
+        super(kernel, parent, parent, { extractor: mineral.id, container: undefined })
         this.memory.extractor = mineral.id
+    }
+
+    initCreepMemory(): {} {
+        return {}
     }
 
     getSpawningPriority(): number {
         return 0
     }
 
-    runCreep(c: Creep, creepMemory: any): void {
+    runCreep(c: Creep): void {
         if (!this.memory.container) {
             this.findAdjacentContainers()
         }

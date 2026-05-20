@@ -3,8 +3,23 @@ import Process, { ProcessRegistry } from "../Process";
 import CreepProcess from "./CreepProcess";
 import RoomManagerProcess from "./RoomManagerProcess";
 import { moveToRoom } from "utils/creepUtils";
+import { SpawnManager } from "SpawnManager";
 
-export class RoomBootstrapProcess extends CreepProcess {
+interface RoomBootstrapProcessMemory {
+    room: string
+    source: string | undefined
+}
+
+enum BootstrapCreepState {
+    FETCHING = 0,
+    DEPOSITING = 1
+}
+interface BootstrapCreepMemory {
+    state: BootstrapCreepState
+}
+
+export class RoomBootstrapProcess extends CreepProcess<RoomBootstrapProcessMemory, BootstrapCreepMemory> {
+
 
     generateSpawnRequest(): [ratio: BodyPartConstant[], targetScale: number, baseparts: (BodyPartConstant[] | undefined), maxCreeps: (number | undefined)] {
         return [[MOVE, WORK, CARRY], 1, undefined, undefined]
@@ -15,18 +30,15 @@ export class RoomBootstrapProcess extends CreepProcess {
     }
 
 
-    constructor(kernel: Kernel, parent: number, roomName: string) {
-        super(kernel, parent, parent)
-        this.memory.roomName = roomName;
+    constructor(kernel: Kernel, parent: SpawnManager, roomName: string) {
+        super(kernel, parent, parent, { room: roomName, source: undefined })
     }
-    runCreep(c: Creep, creepMemory: any): void {
-        if (!this.memory.room) this.memory.room = (this.kernel.getProcess(this.getParent()) as RoomManagerProcess).getRoomName()
+    runCreep(c: Creep, creepMemory: BootstrapCreepMemory): void {
         if (c.room.name != this.memory.room) {
-            moveToRoom(c, this.memory.roomName)
+            moveToRoom(c, this.memory.room)
             return
         }
-        if (!creepMemory.state) creepMemory.state = "mining";
-        if (creepMemory.state == "mining") {
+        if (creepMemory.state == BootstrapCreepState.FETCHING) {
             if (!this.memory.source) {
                 this.memory.source = c.pos.findClosestByRange(FIND_SOURCES)!.id
             }
@@ -64,11 +76,9 @@ export class RoomBootstrapProcess extends CreepProcess {
                 if (miningResult == ERR_NOT_IN_RANGE) c.moveTo(Game.getObjectById(this.memory.source) as Source)
             }
             if (c.store.getFreeCapacity() == 0) {
-                creepMemory.state = "supplying"
+                creepMemory.state = BootstrapCreepState.DEPOSITING
             }
-
-
-        } else if (creepMemory.state == "supplying") {
+        } else if (creepMemory.state == BootstrapCreepState.DEPOSITING) {
             let transferTarget = c.pos.findClosestByRange(FIND_MY_STRUCTURES, { filter: (struct) => (struct.structureType == STRUCTURE_SPAWN || struct.structureType == STRUCTURE_EXTENSION) && struct.store.getFreeCapacity(RESOURCE_ENERGY) > 0 });
             if (!transferTarget) {
                 let buildTarget = c.pos.findClosestByRange(FIND_CONSTRUCTION_SITES);
@@ -88,11 +98,15 @@ export class RoomBootstrapProcess extends CreepProcess {
             } else if (transferResult == ERR_FULL) {
                 this.shutdown()
             } else if (transferResult == 0) {
-                creepMemory.state = "mining"
+                creepMemory.state = BootstrapCreepState.FETCHING
             } else {
-                creepMemory.state = "mining"
+                creepMemory.state = BootstrapCreepState.FETCHING
             }
         }
+    }
+
+    initCreepMemory(): BootstrapCreepMemory {
+        return { state: BootstrapCreepState.FETCHING }
     }
 
     onCreepDeath(): void {

@@ -5,7 +5,12 @@ import Kernel from "Kernel";
 import { Position } from "source-map";
 import RoomManagerProcess from "./RoomManagerProcess";
 
-export default class UpgradeProcess extends EnergyCreepProcess {
+interface UpgradeProcessMemory {
+    scale: number,
+    controller_id: Id<StructureController>
+}
+
+export default class UpgradeProcess extends EnergyCreepProcess<UpgradeProcessMemory> {
 
     generateSpawnRequest(): [ratio: BodyPartConstant[], targetScale: number, baseparts: (BodyPartConstant[] | undefined), maxCreeps: (number | undefined)] {
         return [[MOVE, WORK, CARRY], this.memory.scale, [], undefined];
@@ -15,10 +20,8 @@ export default class UpgradeProcess extends EnergyCreepProcess {
         return false
     }
 
-    constructor(kernel: Kernel, parent: number, controller_id: string) {
-        super(kernel, parent, parent, (kernel.getProcess(parent) as RoomManagerProcess).getRoomName())
-        this.memory.controller_id = controller_id
-        this.memory.scale = 3
+    constructor(kernel: Kernel, parent: RoomManagerProcess, controller_id: Id<StructureController>) {
+        super(kernel, parent, parent, parent.getRoomName(), { controller_id: controller_id, scale: 3 })
     }
 
     getScale(): number {

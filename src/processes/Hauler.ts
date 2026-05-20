@@ -1,12 +1,30 @@
 import Kernel from "Kernel";
 import CreepProcess from "./CreepProcess";
 import { moveToRoom } from "utils/creepUtils";
-import { ProcessRegistry } from "Process";
+import Process, { ProcessRegistry } from "Process";
+import { SpawnManager } from "SpawnManager";
 
-export default class Hauler extends CreepProcess {
+interface HaulerProcessMemory {
+    source: string,
+    destination: string,
+    priority: number,
+    scale: number,
+    amount: number | undefined,
+    resource: ResourceConstant
+}
 
-    constructor(kernel: Kernel, parent: number, spawnManager: number, source: string, destination: string, priority: number, scale: number, resource: ResourceConstant, amount: number | undefined) {
-        super(kernel, parent, spawnManager)
+export default class Hauler extends CreepProcess<HaulerProcessMemory> {
+
+
+    constructor(kernel: Kernel, parent: Process, spawnManager: SpawnManager, source: string, destination: string, priority: number, scale: number, resource: ResourceConstant, amount: number | undefined) {
+        super(kernel, parent, spawnManager, {
+            source: source,
+            destination: destination,
+            priority: priority,
+            scale: scale,
+            amount: amount,
+            resource: resource
+        })
         this.memory.source = source;
         this.memory.destination = destination;
         this.memory.priority = priority
@@ -18,7 +36,7 @@ export default class Hauler extends CreepProcess {
     getSpawningPriority(): number {
         return this.memory.priority
     }
-    runCreep(c: Creep, creepMemory: any): void {
+    runCreep(c: Creep): void {
         if (c.store.getFreeCapacity() > 0) {
             let source = Game.getObjectById(this.memory.source) as Structure
             if (!source) return
@@ -49,6 +67,10 @@ export default class Hauler extends CreepProcess {
     }
 
     onCreepDeath(): void { }
+
+    initCreepMemory(): {} {
+        return {}
+    }
 
     generateSpawnRequest(): [ratio: BodyPartConstant[], targetScale: number, baseparts: (BodyPartConstant[] | undefined), maxCreeps: (number | undefined)] {
         return [[MOVE, CARRY, CARRY], this.memory.scale, [], undefined]

@@ -4,16 +4,50 @@ import { spawn } from "child_process";
 import { EnergyConsumer } from "../utils/EnergyBalance";
 import init from "init";
 import RoomManagerProcess from "./RoomManagerProcess";
+import { SpawnCallback, SpawnManager } from "SpawnManager";
 
 const ENERGY_CONSUMPTION_ALPHA = 0.0005
-abstract class CreepProcess extends Process implements SpawnCallback, EnergyConsumer {
+
+interface CreepObject<C extends Object> {
+    name: string,
+    ratioCount: number,
+    memory: C
+}
+
+interface CreepProcessMemory<C extends Object = {}> {
+    spawnManager: Pid<SpawnManager>,
+    __spawningRatio: number
+    __creeps: Array<CreepObject<C>>
+    __shuttingDown: boolean,
+    __checkSpawned: boolean,
+    __energyConsumption: {
+        timeStart: number,
+        energy: number,
+        lastCall: number
+    }
+    room: string | undefined
+
+}
+abstract class CreepProcess<P, C extends Object = {}> extends Process<P & CreepProcessMemory<C>> implements SpawnCallback<{ scale: number }>, EnergyConsumer {
     buffer: number = 0
 
-    constructor(kernel: Kernel, parent: number, spawnManager: number) {
-        super(kernel, parent)
-        this.memory.spawnManager = spawnManager;
-        this.memory.__creeps = []
-        this.resetEnergyConsumption()
+    constructor(kernel: Kernel, parent: Process, spawnManager: SpawnManager, memory: P) {
+
+        super(kernel, parent, {
+            spawnManager: spawnManager.getPID(),
+            __spawningRatio: 0,
+            __creeps: [],
+            __shuttingDown: false,
+            __checkSpawned: false,
+            __energyConsumption: {
+                timeStart: Game.time,
+                energy: 0,
+                lastCall: Game.time
+            },
+            room: undefined,
+            ...memory
+        }
+        )
     }
 
     resetEnergyConsumption(): void {
@@ -52,19 +86,20 @@ abstract class CreepProcess extends Process implements SpawnCallback, EnergyCons
         this.buffer = 0
     }
 
+    abstract initCreepMemory(): C
 
-    onCreepSpawned(name: string, callbackValues: any): void {
+    onCreepSpawned(name: string, callbackValues: { scale: number }): void {
         this.memory.__creeps.push({
             name: name,
             ratioCount: callbackValues.scale,
-            memory: {}
+            memory: this.initCreepMemory()
         })
         this.memory.__spawningRatio -= callbackValues.scale
         this.sleepUntil = 0;
     }
 
     getAliveScale(): number {
-        return _.sum(_.map(this.memory.__creeps, (c: any) => c.ratioCount))
+        return _.sum(_.map(this.memory.__creeps, (c: CreepObject<C>) => c.ratioCount))
     }
 
     orderCreepParts(body: BodyPartConstant[]): BodyPartConstant[] {
@@ -102,9 +137,9 @@ abstract class CreepProcess extends Process implements SpawnCallback, EnergyCons
     }
 
     run() {
-        if (!this.memory.checkSpawned) {
+        if (!this.memory.__checkSpawned) {
             this.checkSpawning();
-            this.memory.checkSpawned = true;
+            this.memory.__checkSpawned = true;
         }
         if (!this.kernel.getProcess(this.memory.spawnManager)) {
             this.shutdown()
@@ -118,16 +153,16 @@ abstract class CreepProcess extends Process implements SpawnCallback, EnergyCons
             this.memory.__creeps = []
         }
         if (this.memory.__shuttingDown) {
-            this.memory.__creeps = _.filter(this.memory.__creeps, (c: any) => c.name in Game.creeps)
+            this.memory.__creeps = _.filter(this.memory.__creeps, (c: CreepObject<C>) => c.name in Game.creeps)
             for (let creep of this.memory.__creeps) {
                 Game.creeps[creep.name].suicide()
             }
             if (this.memory.__creeps.length == 0) this.kernel.killProcess(this.getPID())
             return
         }
-        let deadCreeps = _.filter(this.memory.__creeps, (c: any) => !(c.name in Game.creeps))
+        let deadCreeps = _.filter(this.memory.__creeps, (c: CreepObject<C>) => !(c.name in Game.creeps))
         if (deadCreeps.length > 0) {
-            this.memory.__creeps = _.filter(this.memory.__creeps, (c: any) => c.name in Game.creeps)
+            this.memory.__creeps = _.filter(this.memory.__creeps, (c: CreepObject<C>) => c.name in Game.creeps)
             this.onCreepDeath();
             this.checkSpawning();
         }
@@ -170,7 +205,7 @@ abstract class CreepProcess extends Process implements SpawnCallback, EnergyCons
         return creeps;
     }
 
-    abstract runCreep(c: Creep, creepMemory: any): void;
+    abstract runCreep(c: Creep, creepMemory: C): void;
 
     abstract onCreepDeath(): void;
 
@@ -199,7 +234,7 @@ abstract class CreepProcess extends Process implements SpawnCallback, EnergyCons
     }
 
     park(c: Creep): boolean {
-        let initProc: init = this.kernel.getProcess(0)! as init;
+        let initProc: init = this.kernel.getProcess(0 as Pid<init>)! as init;
         let roomMgrID = initProc.getRoomManager(c.room.name);
         if (roomMgrID) {
             let roomMgrProc = this.kernel.getProcess(roomMgrID) as RoomManagerProcess;

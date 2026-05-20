@@ -1,17 +1,23 @@
 import Kernel from "Kernel";
-import { ProcessRegistry } from "Process";
+import Process, { ProcessRegistry } from "Process";
 import CreepProcess from "processes/CreepProcess";
+import { SpawnManager } from "SpawnManager";
+
+interface ClearCreepMemory {
+    target: Id<_HasId> | undefined;
+}
 
 
-export default class ClearFlag extends CreepProcess {
-    constructor(kernel: Kernel, parent: number, spawnManager: number, flag: Flag) {
-        super(kernel, parent, spawnManager)
-        this.memory.room = flag.pos.roomName
+export default class ClearFlag extends CreepProcess<{ room: string }, ClearCreepMemory> {
+    constructor(kernel: Kernel, parent: Process, spawnManager: SpawnManager, flag: Flag) {
+        super(kernel, parent, spawnManager, { room: flag.pos.roomName })
     }
+
     getSpawningPriority(): number {
         return 0;
     }
-    runCreep(c: Creep, creepMemory: any): void {
+
+    runCreep(c: Creep, creepMemory: ClearCreepMemory): void {
         if (c.room.name != this.memory.room) {
             c.moveTo(new RoomPosition(25, 25, this.memory.room))
             return;
@@ -30,6 +36,13 @@ export default class ClearFlag extends CreepProcess {
         }
 
     }
+
+    initCreepMemory(): ClearCreepMemory {
+        return {
+            target: undefined
+        }
+    }
+
     onCreepDeath(): void { }
 
     generateSpawnRequest(): [ratio: BodyPartConstant[], targetScale: number, baseparts: (BodyPartConstant[] | undefined), maxCreeps: (number | undefined)] {

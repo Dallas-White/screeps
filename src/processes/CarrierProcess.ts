@@ -6,6 +6,7 @@ import Kernel from "Kernel";
 import RoomManagerProcess from "./RoomManagerProcess";
 import { moveToRoom } from "utils/creepUtils";
 import { drop } from "lodash";
+import { SpawnManager } from "SpawnManager";
 
 abstract class CarrierJob {
     checkJob(c: Creep): boolean {
@@ -130,21 +131,47 @@ class SourceToTerminal extends CarrierJob {
         return c.room.terminal
     }
 }
-export default class CarrierProcess extends CreepProcess {
 
-    private static JOBS = [new RefillPriorityJob(), new DroppedEnergyToStorageJob(), new SourceToRemoteContainersJob(), new SourceToStorage(), new SourceToTerminal()]
-    runCreep(c: Creep, creepMemory: any): void {
-        if (!this.memory.room) this.memory.room = (this.kernel.getProcess(this.getParent()) as RoomManagerProcess).getRoomName()
+interface CarrierProcessMemory {
+    room: string,
+    scale: number
+}
+
+enum CarrierCreepState {
+    FETCHING = 0,
+    ACTING = 1
+}
+
+interface CarrierCreepMemory {
+    currentJobIdx: number | undefined
+    fetchTarget: Id<_HasId> | undefined
+    destination: Id<_HasId> | undefined;
+    state: CarrierCreepState;
+
+}
+
+export default class CarrierProcess extends CreepProcess<CarrierProcessMemory, CarrierCreepMemory> {
+    initCreepMemory(): CarrierCreepMemory {
+        return {
+            state: CarrierCreepState.FETCHING,
+            fetchTarget: undefined,
+            destination: undefined,
+            currentJobIdx: undefined
+
+        }
+    }
+
+    private static JOBS: CarrierJob[] = [new RefillPriorityJob(), new DroppedEnergyToStorageJob(), new SourceToRemoteContainersJob(), new SourceToStorage(), new SourceToTerminal()]
+    runCreep(c: Creep, creepMemory: CarrierCreepMemory): void {
         if (c.room.name != this.memory.room) {
             moveToRoom(c, this.memory.room)
             return
         }
-        if (!creepMemory.state) creepMemory.state = "fetching"
         if (!creepMemory.currentJobIdx) {
             let foundJob = false;
             for (let job in CarrierProcess.JOBS) {
                 if (CarrierProcess.JOBS[job].checkJob(c)) {
-                    creepMemory.currentJobIdx = job
+                    creepMemory.currentJobIdx = job as unknown as number
                     foundJob = true;
                     break
                 }
@@ -156,9 +183,9 @@ export default class CarrierProcess extends CreepProcess {
             return;
         }
         let job = CarrierProcess.JOBS[creepMemory.currentJobIdx]
-        if (creepMemory.state == "fetching") {
+        if (creepMemory.state == CarrierCreepState.FETCHING) {
             if (c.store.getFreeCapacity(RESOURCE_ENERGY) == 0) {
-                creepMemory.state = "depositing"
+                creepMemory.state = CarrierCreepState.ACTING
                 return
             }
             let needsNewFetch = false
@@ -181,7 +208,7 @@ export default class CarrierProcess extends CreepProcess {
                 }
                 creepMemory.fetchTarget = newFetchTarget.id
             }
-            let fetchTarget = Game.getObjectById(creepMemory.fetchTarget)
+            let fetchTarget = Game.getObjectById(creepMemory.fetchTarget!)
             let returnCode: ScreepsReturnCode = ERR_INVALID_ARGS
             if (fetchTarget instanceof Structure) {
                 returnCode = c.withdraw(fetchTarget, RESOURCE_ENERGY)
@@ -191,7 +218,7 @@ export default class CarrierProcess extends CreepProcess {
             if (returnCode == ERR_NOT_IN_RANGE) {
                 c.moveTo((fetchTarget as unknown as _HasRoomPosition))
             } else if (returnCode == OK) {
-                creepMemory.state = "depositing"
+                creepMemory.state = CarrierCreepState.ACTING
             }
         } else {
             let needsNewDestination = false
@@ -214,25 +241,24 @@ export default class CarrierProcess extends CreepProcess {
                 }
                 creepMemory.destination = newDestination.id
             }
-            let destination = Game.getObjectById(creepMemory.destination)
+            let destination = Game.getObjectById(creepMemory.destination!)
             let returnCode = c.transfer(destination as Structure, RESOURCE_ENERGY)
             if (returnCode == ERR_NOT_IN_RANGE) {
                 c.moveTo((destination as unknown as _HasRoomPosition))
             } else {
-                if (c.store.getUsedCapacity() == 0) creepMemory.state = "fetching"
                 creepMemory.currentJobIdx = undefined
                 creepMemory.fetchTarget = undefined
                 creepMemory.destination = undefined
             }
+            if (c.store.getUsedCapacity() == 0) creepMemory.state = CarrierCreepState.FETCHING
         }
     }
 
     onCreepDeath(): void {
         return
     }
-    constructor(kernel: Kernel, parent: number) {
-        super(kernel, parent, parent)
-        this.memory.scale = 1
+    constructor(kernel: Kernel, parent: Process, spawnManager: SpawnManager, roomName: string) {
+        super(kernel, parent, spawnManager, { scale: 1, room: roomName })
     }
 
     generateSpawnRequest(): [ratio: BodyPartConstant[], targetScale: number, baseparts: (BodyPartConstant[] | undefined), maxCreeps: (number | undefined)] {

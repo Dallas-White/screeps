@@ -1,10 +1,11 @@
-interface SpawnManager {
+import Process from "Process";
+
+export interface SpawnManager extends Process {
     getMaxEnergy(): number;
-    addToQueue(body: BodyPartConstant[], priority: number, targetRoom: string | undefined, spawnCallback: SpawnCallback, callbackValues: any): boolean;
+    addToQueue<T>(body: BodyPartConstant[], priority: number, targetRoom: string | undefined, spawnCallback: SpawnCallback<T>, callbackValues: T): boolean;
     cancelSpawn(pid: number): void
 }
 
-interface SpawnCallback {
-    onCreepSpawned(name: string, values: any): void;
-    getPID(): number;
+export interface SpawnCallback<T> extends Process {
+    onCreepSpawned(name: string, values: T): void;
 }
