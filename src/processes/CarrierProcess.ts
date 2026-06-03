@@ -7,281 +7,151 @@ import RoomManagerProcess from "./RoomManagerProcess";
 import { moveToRoom } from "utils/creepUtils";
 import { drop } from "lodash";
 import { SpawnManager } from "SpawnManager";
-
-abstract class CarrierJob {
-    checkJob(c: Creep): boolean {
-        return this.getSource(c) != undefined && this.getDestination(c) != undefined;
-    }
-    abstract getSource(c: Creep): Structure | Resource | undefined
-    abstract getDestination(c: Creep): Structure | undefined
-}
-
-class RefillPriorityJob extends CarrierJob {
-
-    getSource(creep: Creep): Structure | Resource | undefined {
-        let droppedEnergy: _HasRoomPosition[] = creep.room.find(FIND_DROPPED_RESOURCES, { filter: (filter) => filter.resourceType == RESOURCE_ENERGY && filter.amount > 50 });
-        let containers: _HasRoomPosition[] = creep.room.find(FIND_STRUCTURES, {
-            filter: function (structure) {
-                if (structure.structureType == STRUCTURE_STORAGE ||
-                    structure.structureType == STRUCTURE_LINK || structure.structureType == STRUCTURE_CONTAINER) {
-                    if (structure.store[RESOURCE_ENERGY] > 50) return true
-                }
-                return false
-
-            }
-        });
-        containers = containers.concat(droppedEnergy)
-        let closest_container = creep.pos.findClosestByRange(containers)
-        if (closest_container == null) return undefined;
-        return closest_container as Resource | Structure
-    }
-    getDestination(c: Creep): Structure | undefined {
-        let needsFilled = c.room.find(FIND_MY_STRUCTURES, {
-            filter: (structure) => (structure.structureType == STRUCTURE_SPAWN
-                || structure.structureType == STRUCTURE_TOWER || structure.structureType == STRUCTURE_EXTENSION)
-                && structure.store[RESOURCE_ENERGY] < structure.store.getCapacity(RESOURCE_ENERGY)
-        })
-        let closestJob = c.pos.findClosestByRange(needsFilled)
-        return closestJob ? closestJob : undefined
-
-
-    }
-
-}
-
-class DroppedEnergyToStorageJob extends CarrierJob {
-
-    getSource(c: Creep) {
-        const dropped = c.pos.findClosestByRange(FIND_DROPPED_RESOURCES, {
-            filter: res => res.resourceType === RESOURCE_ENERGY && res.amount > 0
-        });
-        return dropped ? dropped : undefined
-    }
-
-    getDestination(c: Creep) {
-        const target = c.pos.findClosestByRange(FIND_STRUCTURES, {
-            filter: s =>
-                (s.structureType === STRUCTURE_CONTAINER) &&
-                s.store.getFreeCapacity(RESOURCE_ENERGY) > 0 &&
-                !s.isSourceStructure
-        });
-        return target ? target : undefined
-    }
-}
-
-class SourceToRemoteContainersJob extends CarrierJob {
-
-    getSource(c: Creep) {
-        let sources = c.room.find(FIND_SOURCES);
-        let source = c.pos.findClosestByRange(FIND_STRUCTURES, {
-            filter: s =>
-                s.structureType === STRUCTURE_CONTAINER &&
-                s.store[RESOURCE_ENERGY] > 0 &&
-                s.isSourceStructure
-        });
-        return source ? source : undefined
-    }
-
-    getDestination(c: Creep) {
-
-        const target = c.pos.findClosestByRange(FIND_STRUCTURES, {
-            filter: s =>
-                s.structureType === STRUCTURE_CONTAINER &&
-                s.store.getFreeCapacity(RESOURCE_ENERGY) > 0 &&
-                !s.isSourceStructure
-        });
-        return target ? target : undefined
-    }
-}
-
-class SourceToStorage extends CarrierJob {
-
-    getSource(c: Creep) {
-        let sources = c.room.find(FIND_SOURCES)
-        const source = c.pos.findClosestByRange(FIND_STRUCTURES, {
-            filter: s =>
-                ((s.structureType === STRUCTURE_CONTAINER &&
-                    sources.some(spawn => spawn.pos.getRangeTo(s) <= 1)) || s.structureType == STRUCTURE_LINK) &&
-                s.store.getUsedCapacity(RESOURCE_ENERGY) > 0
-        })
-        return source ? source : undefined
-    }
-
-    getDestination(c: Creep) {
-
-        if (c.room.storage && c.room.storage.store[RESOURCE_ENERGY] > 500000) return undefined
-        return c.room.storage
-    }
-}
-
-class SourceToTerminal extends CarrierJob {
-
-    getSource(c: Creep) {
-        let sources = c.room.find(FIND_SOURCES)
-        const source = c.pos.findClosestByRange(FIND_STRUCTURES, {
-            filter: s =>
-                s.structureType === STRUCTURE_CONTAINER &&
-                s.store[RESOURCE_ENERGY] > 0 &&
-                sources.some(spawn => spawn.pos.getRangeTo(s) <= 1)
-        });
-        return source ? source : undefined
-    }
-
-    getDestination(c: Creep) {
-        return c.room.terminal
-    }
-}
-
-interface CarrierProcessMemory {
-    room: string,
-    scale: number
-}
+import { LogisticsAssignment, LogisticsManager } from "./LogisticsManager";
 
 enum CarrierCreepState {
     FETCHING = 0,
-    ACTING = 1
+    DEPOSITING = 1
+}
+interface CarrierCreepMemory {
+    assignment: LogisticsAssignment | undefined
+    state: CarrierCreepState
 }
 
-interface CarrierCreepMemory {
-    currentJobIdx: number | undefined
-    fetchTarget: Id<_HasId> | undefined
-    destination: Id<_HasId> | undefined;
-    state: CarrierCreepState;
-
+interface CarrierProcessMemory {
+    logisticsManager: Pid<LogisticsManager>
+    scale: number
+    room: string
 }
 
 export default class CarrierProcess extends CreepProcess<CarrierProcessMemory, CarrierCreepMemory> {
-    initCreepMemory(): CarrierCreepMemory {
-        return {
-            state: CarrierCreepState.FETCHING,
-            fetchTarget: undefined,
-            destination: undefined,
-            currentJobIdx: undefined
 
-        }
+    constructor(kernel: Kernel, parent: Process, logisticsManager: LogisticsManager, spawnManager: SpawnManager, scale: number) {
+        super(kernel, parent, spawnManager, {
+            logisticsManager: logisticsManager.getPID(),
+            scale: 1,
+            room: logisticsManager.getRoom()
+        })
     }
 
-    private static JOBS: CarrierJob[] = [new RefillPriorityJob(), new DroppedEnergyToStorageJob(), new SourceToRemoteContainersJob(), new SourceToStorage(), new SourceToTerminal()]
+    setScale(scale: number) {
+        this.memory.scale = scale
+    }
+
+    initCreepMemory(): CarrierCreepMemory {
+        return { assignment: undefined, state: CarrierCreepState.FETCHING }
+    }
+    getSpawningPriority(): number {
+        return 10000
+    }
     runCreep(c: Creep, creepMemory: CarrierCreepMemory): void {
-        if (c.room.name != this.memory.room) {
-            moveToRoom(c, this.memory.room)
-            return
+        if (!creepMemory.assignment) {
+            if (c.store.getUsedCapacity() != 0) {
+                let dest: AnyStoreStructure;
+                if (c.room.storage && c.room.storage.store.getFreeCapacity() >= c.store.getUsedCapacity()) {
+                    dest = c.room.storage
+                } else {
+                    let containers = c.room.find(FIND_STRUCTURES, { filter: (s) => s.structureType == STRUCTURE_CONTAINER && s.store.getFreeCapacity() >= c.store.getUsedCapacity() })
+                    if (containers.length == 0) {
+                        for (let x of RESOURCES_ALL) {
+                            if (c.store.getUsedCapacity(x) > 0) {
+                                c.drop(x)
+                                return
+                            }
+                        }
+                    }
+                    dest = c.pos.findClosestByRange(containers) as AnyStoreStructure
+                }
+                for (let x of RESOURCES_ALL) {
+                    if (c.store.getUsedCapacity(x) > 0) {
+                        if (c.transfer(dest, x) == ERR_NOT_IN_RANGE) {
+                            c.moveTo(dest)
+                        }
+                        return
+                    }
+                }
+            } else {
+                creepMemory.assignment = this.kernel.getProcess(this.memory.logisticsManager)?.getTask(c.store.getFreeCapacity())
+                creepMemory.state = CarrierCreepState.FETCHING
+            }
+
         }
-        if (!creepMemory.currentJobIdx) {
-            let foundJob = false;
-            for (let job in CarrierProcess.JOBS) {
-                if (CarrierProcess.JOBS[job].checkJob(c)) {
-                    creepMemory.currentJobIdx = job as unknown as number
-                    foundJob = true;
-                    break
+        if (!creepMemory.assignment) return
+        if (creepMemory.state == CarrierCreepState.FETCHING) {
+            let source: AnyStoreStructure | Resource
+            if (creepMemory.assignment.source && Game.getObjectById(creepMemory.assignment.source)) {
+                source = Game.getObjectById(creepMemory.assignment.source)!
+            } else if (c.room.storage && c.room.storage.store[creepMemory.assignment.resource] >= creepMemory.assignment.amount) {
+                source = c.room.storage
+            } else {
+                let containers = c.room.find(FIND_STRUCTURES, { filter: (s) => s.structureType == STRUCTURE_CONTAINER && (!creepMemory.assignment?.amount || s.store[creepMemory.assignment?.resource] > creepMemory.assignment?.amount) })
+                if (containers.length == 0) {
+                    let dropped_resources = c.room.find(FIND_DROPPED_RESOURCES, { filter: (s) => s.resourceType == creepMemory.assignment?.resource })
+                    if (dropped_resources.length == 0) {
+                        this.kernel.getProcess(this.memory.logisticsManager)?.returnAssignment(creepMemory.assignment)
+                        creepMemory.assignment = undefined
+                        return
+                    }
+                    source = dropped_resources[0]
+                } else {
+                    source = containers[0] as StructureContainer
                 }
             }
-            if (!foundJob) this.sleep(5);
-        }
-        if (!creepMemory.currentJobIdx) {
-            this.park(c);
-            return;
-        }
-        let job = CarrierProcess.JOBS[creepMemory.currentJobIdx]
-        if (creepMemory.state == CarrierCreepState.FETCHING) {
-            if (c.store.getFreeCapacity(RESOURCE_ENERGY) == 0) {
-                creepMemory.state = CarrierCreepState.ACTING
+            let amountAvailable = source instanceof Resource ? source.amount : source.store[creepMemory.assignment.resource]
+            if (amountAvailable < creepMemory.assignment.amount) {
+                this.kernel.getProcess(this.memory.logisticsManager)?.returnAssignment(creepMemory.assignment)
+                creepMemory.assignment = undefined
                 return
             }
-            let needsNewFetch = false
-            if (creepMemory.fetchTarget) {
-                let fetchTarget = Game.getObjectById(creepMemory.fetchTarget)
-                if (!fetchTarget || (fetchTarget instanceof Structure && (fetchTarget as StructureStorage).store.getUsedCapacity(RESOURCE_ENERGY) < 50)
-                    || (fetchTarget instanceof Resource && (fetchTarget as Resource).amount < 50)) {
-                    needsNewFetch = true
-                }
-            } else {
-                needsNewFetch = true
+            let withdrawCode = source instanceof Resource ? c.pickup(source) : c.withdraw(source, creepMemory.assignment.resource, creepMemory.assignment.amount)
+            if (withdrawCode == OK) {
+                creepMemory.state = CarrierCreepState.DEPOSITING
+            } else if (withdrawCode == ERR_NOT_IN_RANGE) {
+                c.moveTo(source)
             }
-            if (needsNewFetch) {
-                let newFetchTarget = job.getSource(c)
-                if (!newFetchTarget) {
-                    creepMemory.fetchTarget = undefined
-                    creepMemory.destination = undefined
-                    creepMemory.currentJobIdx = undefined
+        } else if (creepMemory.state = CarrierCreepState.DEPOSITING) {
+            let dest: AnyStoreStructure
+            if (creepMemory.assignment.dest && Game.getObjectById(creepMemory.assignment.dest)) {
+                dest = Game.getObjectById(creepMemory.assignment.dest)!
+            } else if (c.room.storage && c.room.storage.store.getFreeCapacity() >= creepMemory.assignment.amount) {
+                dest = c.room.storage
+            } else {
+                let containers = c.room.find(FIND_STRUCTURES, { filter: (s) => s.structureType == STRUCTURE_CONTAINER && !s.isSourceStructure && creepMemory.assignment!.amount >= s.store.getFreeCapacity() })
+                if (containers.length == 0) {
+                    this.kernel.getProcess(this.memory.logisticsManager)?.returnAssignment(creepMemory.assignment)
+                    creepMemory.assignment = undefined
                     return
                 }
-                creepMemory.fetchTarget = newFetchTarget.id
+                dest = containers[0] as StructureContainer
             }
-            let fetchTarget = Game.getObjectById(creepMemory.fetchTarget!)
-            let returnCode: ScreepsReturnCode = ERR_INVALID_ARGS
-            if (fetchTarget instanceof Structure) {
-                returnCode = c.withdraw(fetchTarget, RESOURCE_ENERGY)
-            } else if (fetchTarget instanceof Resource) {
-                returnCode = c.pickup(fetchTarget)
+            if (dest.store.getFreeCapacity(creepMemory.assignment.resource) == null || dest.store.getFreeCapacity(creepMemory.assignment.resource)! < creepMemory.assignment.amount) {
+                this.kernel.getProcess(this.memory.logisticsManager)?.returnAssignment(creepMemory.assignment)
+                creepMemory.assignment = undefined
+                return
             }
-            if (returnCode == ERR_NOT_IN_RANGE) {
-                c.moveTo((fetchTarget as unknown as _HasRoomPosition))
-            } else if (returnCode == OK) {
-                creepMemory.state = CarrierCreepState.ACTING
+            let returnCode = c.transfer(dest, creepMemory.assignment.resource, creepMemory.assignment.amount)
+            if (returnCode == OK) {
+                this.kernel.getProcess(this.memory.logisticsManager)?.completeAssignment(creepMemory.assignment)
+                creepMemory.assignment = undefined
+                creepMemory.state = CarrierCreepState.FETCHING
+            } else if (returnCode == ERR_NOT_IN_RANGE) {
+                c.moveTo(dest)
             }
-        } else {
-            let needsNewDestination = false
-            if (creepMemory.destination) {
-                let destination = Game.getObjectById(creepMemory.destination)
-                if (!destination || (destination as StructureStorage).store.getFreeCapacity(RESOURCE_ENERGY) == 0) {
-                    needsNewDestination = true
-                }
-            } else {
-                needsNewDestination = true
-            }
-
-            if (needsNewDestination) {
-                let newDestination = job.getDestination(c)
-                if (!newDestination) {
-                    creepMemory.currentJobIdx = undefined
-                    creepMemory.fetchTarget = undefined
-                    creepMemory.destination = undefined
-                    return
-                }
-                creepMemory.destination = newDestination.id
-            }
-            let destination = Game.getObjectById(creepMemory.destination!)
-            let returnCode = c.transfer(destination as Structure, RESOURCE_ENERGY)
-            if (returnCode == ERR_NOT_IN_RANGE) {
-                c.moveTo((destination as unknown as _HasRoomPosition))
-            } else {
-                creepMemory.currentJobIdx = undefined
-                creepMemory.fetchTarget = undefined
-                creepMemory.destination = undefined
-            }
-            if (c.store.getUsedCapacity() == 0) creepMemory.state = CarrierCreepState.FETCHING
         }
     }
 
-    onCreepDeath(): void {
-        return
+    onCreepDeath(creepMemory: CarrierCreepMemory): void {
+        if (creepMemory.assignment) {
+            this.kernel.getProcess(this.memory.logisticsManager)?.returnAssignment(creepMemory.assignment);
+        }
     }
-    constructor(kernel: Kernel, parent: Process, spawnManager: SpawnManager, roomName: string) {
-        super(kernel, parent, spawnManager, { scale: 1, room: roomName })
-    }
-
-    generateSpawnRequest(): [ratio: BodyPartConstant[], targetScale: number, baseparts: (BodyPartConstant[] | undefined), maxCreeps: (number | undefined)] {
-        if (!this.memory.scale) this.memory.scale = 5
-        return [[MOVE, CARRY, CARRY], this.memory.scale, [], undefined]
-    }
-
-    getScale(): number {
-        return this.memory.scale
-    }
-
-    setScale(n: number) {
-        this.memory.scale = n
-    }
-
-    getSpawningPriority(): number {
-        return 100
+    generateSpawnRequest(): [ratio: BodyPartConstant[], targetScale: number, baseparts: BodyPartConstant[] | undefined, maxCreeps: number | undefined] {
+        return [[MOVE, CARRY, CARRY], this.memory.scale, undefined, undefined]
     }
 
     getType(): string {
         return "CarrierProcess"
     }
-
 
 }
 ProcessRegistry.register("CarrierProcess", CarrierProcess)

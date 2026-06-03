@@ -18,6 +18,7 @@ import MineralHauler from "./mineralManagement/MineralHauler";
 import LinkManager from "./LinkManager";
 import floodFill from "utils/floodfill";
 import { SpawnCallback, SpawnManager } from "SpawnManager";
+import { CarrierJobFinishedCallback, LogisticsManager } from "./LogisticsManager";
 
 const SPAWN_EMA_ALPHA = 0.05
 
@@ -39,25 +40,27 @@ interface RoomManagerMemory {
     linkProcess: Pid<LinkManager> | undefined;
     mineralHarvester: Pid<MineralHarvester> | undefined;
     mineralHauler: Pid<MineralHauler> | undefined;
-    bootstrapped: boolean;
-    upgradeProcess: Pid<UpgradeProcess> | undefined;
-    carrierProcesses: Pid<CarrierProcess>[];
+    upgradeProcess: Pid<UpgradeProcess>;
+    logisticsManager: Pid<LogisticsManager>;
     spawnEMA: {
         ema: number
         time: number
     };
+    bootstrapped: boolean,
     constructionProcess: Pid<BuilderProcess> | undefined;
     bootstrapProcess: Pid<RoomBootstrapProcess> | undefined;
     defender: Pid<AttackCreepProcess> | undefined;
     healer: Pid<HealingProcess> | undefined;
+    refillRequests: Record<Id<AnyStoreStructure>, LogisticsTaskID>
+    needsRefillScan: boolean
 
 }
-class RoomManagerProcess extends Process<RoomManagerMemory> implements SpawnManager, ConstructionFinishedCallback {
+class RoomManagerProcess extends Process<RoomManagerMemory> implements SpawnManager, ConstructionFinishedCallback, CarrierJobFinishedCallback {
     constructor(r: Room, kernel: Kernel, parent: Process) {
         super(kernel, parent, {
             room: r.name,
             spawnQueue: [],
-            spawnTick: 0,
+            spawnTick: Game.time,
             parkingMatrix: [],
             towers: {},
             wallBuilderProcess: undefined,
@@ -65,19 +68,59 @@ class RoomManagerProcess extends Process<RoomManagerMemory> implements SpawnMana
             linkProcess: undefined,
             mineralHarvester: undefined,
             mineralHauler: undefined,
-            bootstrapped: false,
-            upgradeProcess: undefined,
-            carrierProcesses: [],
+            upgradeProcess: 0 as Pid<UpgradeProcess>,
             spawnEMA: { ema: 0, time: Game.time },
+            logisticsManager: 0 as Pid<LogisticsManager>,
+            bootstrapped: false,
             constructionProcess: undefined,
             bootstrapProcess: undefined,
             defender: undefined,
-            healer: undefined
-        })
-        this.memory.room = r.name;
-        this.memory.spawnQueue = []
-        this.memory.spawnTick = Game.time
+            healer: undefined,
+            refillRequests: {},
+            needsRefillScan: true
+        });
+
     }
+
+    onCarrierJobFinished(id: LogisticsTask): void {
+        delete this.memory.refillRequests[id.dest!]
+    }
+
+    getLogisticsManager(): LogisticsManager {
+        return this.kernel.getProcess(this.memory.logisticsManager)!
+    }
+
+    scanForRefills() {
+        console.log("REFILL SCANNING")
+        let structuresNeedingEnergy = Game.rooms[this.memory.room].find(FIND_MY_STRUCTURES, { filter: (s) => (s.structureType == STRUCTURE_SPAWN || s.structureType == STRUCTURE_EXTENSION) && s.store.getFreeCapacity(RESOURCE_ENERGY) > 0 }) as AnyStoreStructure[]
+        for (let x of structuresNeedingEnergy) {
+            if (this.memory.refillRequests[x.id]) {
+                try {
+                    this.getLogisticsManager().resizeTask(this.memory.refillRequests[x.id], x.store.getFreeCapacity(RESOURCE_ENERGY))
+                } catch {
+                    delete this.memory.refillRequests[x.id]
+                    this.memory.refillRequests[x.id] = this.getLogisticsManager().addLogisticTask({
+                        priority: 100,
+                        amount: x.store.getFreeCapacity(RESOURCE_ENERGY),
+                        source: undefined,
+                        dest: x.id,
+                        resource: RESOURCE_ENERGY,
+                        callback: this.getPID()
+                    })
+                }
+            } else {
+                this.memory.refillRequests[x.id] = this.getLogisticsManager().addLogisticTask({
+                    priority: 100,
+                    amount: x.store.getFreeCapacity(RESOURCE_ENERGY),
+                    source: undefined,
+                    dest: x.id,
+                    resource: RESOURCE_ENERGY,
+                    callback: this.getPID()
+                })
+            }
+        }
+    }
+
 
     onConstructionFinished(type: StructureConstant, pos: RoomPosition): void {
         let pmStructures = Game.rooms[this.memory.room].find(FIND_STRUCTURES).map(s => s.pos);
@@ -172,6 +215,25 @@ class RoomManagerProcess extends Process<RoomManagerMemory> implements SpawnMana
     }
 
     run(): void {
+        if (this.memory.needsRefillScan) {
+            this.scanForRefills()
+            this.memory.needsRefillScan = false
+        }
+        if (!this.memory.bootstrapped) {
+            let logisticsManagerProcess = new LogisticsManager(this.kernel, this, this.memory.room)
+            this.memory.logisticsManager = this.kernel.addProcess(logisticsManagerProcess)
+            let bootstrapProcess = new RoomBootstrapProcess(this.kernel, this, this.memory.room)
+            this.kernel.addProcess(bootstrapProcess)
+            let sources = Game.rooms[this.memory.room].find(FIND_SOURCES)
+            let upgradeProcess = new UpgradeProcess(this.kernel, this, Game.rooms[this.memory.room].controller!.id)
+            this.kernel.addProcess(upgradeProcess)
+            this.memory.upgradeProcess = upgradeProcess.getPID()
+            for (let x of sources) {
+                let harvestProcess = new HarvesterProcess(this.kernel, this, this, x);
+                this.kernel.addProcess(harvestProcess)
+            }
+            this.memory.bootstrapped = true
+        }
         if (!Game.rooms[this.memory.room] || !Game.rooms[this.memory.room].controller?.my) {
             this.kernel.killProcess(this.getPID())
             return
@@ -184,26 +246,6 @@ class RoomManagerProcess extends Process<RoomManagerMemory> implements SpawnMana
             }
         }
 
-        if (!this.memory.bootstrapped) {
-            let bootstrapProcess = new RoomBootstrapProcess(this.kernel, this, this.memory.room)
-            this.kernel.addProcess(bootstrapProcess)
-            let sources = Game.rooms[this.memory.room].find(FIND_SOURCES)
-
-            let upgradeProcess = new UpgradeProcess(this.kernel, this, Game.rooms[this.memory.room].controller!.id)
-            this.kernel.addProcess(upgradeProcess)
-            this.memory.upgradeProcess = upgradeProcess.getPID()
-            for (let x of sources) {
-                let harvestProcess = new HarvesterProcess(this.kernel, this, this, x);
-                this.kernel.addProcess(harvestProcess)
-            }
-            let carrierProcess = new CarrierProcess(this.kernel, this, this, this.memory.room);
-            this.kernel.addProcess(carrierProcess)
-            let carrierProcess2 = new CarrierProcess(this.kernel, this, this, this.memory.room);
-            carrierProcess2.sleep(Math.floor(CREEP_LIFE_TIME / 2))
-            this.kernel.addProcess(carrierProcess2)
-            this.memory.carrierProcesses = [carrierProcess.getPID(), carrierProcess2.getPID()]
-            this.memory.bootstrapped = true
-        }
         if (this.memory.spawnQueue.length > 0) {
             if (!this.kernel.getProcess(this.memory.spawnQueue[0].pid) || this.memory.spawnQueue[0].body.length == 0 || RoomManagerProcess.calculateBodyCost(this.memory.spawnQueue[0].body) > Game.rooms[this.memory.room].energyCapacityAvailable) {
                 this.memory.spawnQueue.splice(0, 1)
@@ -217,10 +259,12 @@ class RoomManagerProcess extends Process<RoomManagerMemory> implements SpawnMana
                     } else {
                         (this.kernel.getProcess(this.memory.spawnQueue[0].pid) as SpawnCallback<any>).onCreepSpawned(creepName, this.memory.spawnQueue[0].callbackValues);
                         this.memory.spawnQueue.splice(0, 1)
+                        this.memory.needsRefillScan = true
                     }
                 }
             }
         }
+
         this.memory.spawnEMA.ema = this.memory.spawnEMA.ema * (1 - SPAWN_EMA_ALPHA) + this.memory.spawnQueue.length * SPAWN_EMA_ALPHA
         if (Game.time % 5 == 0) {
             let sites = Game.rooms[this.memory.room].find(FIND_CONSTRUCTION_SITES)
@@ -300,6 +344,7 @@ class RoomManagerProcess extends Process<RoomManagerMemory> implements SpawnMana
         } else if (this.memory.defender) {
             this.kernel.getProcess(this.memory.defender)?.shutdown()
             this.memory.defender = undefined
+
             this.kernel.getProcess(this.memory.healer!)?.shutdown()
             this.memory.healer = undefined
         }

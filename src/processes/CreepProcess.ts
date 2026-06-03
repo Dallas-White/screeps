@@ -162,8 +162,10 @@ abstract class CreepProcess<P, C extends Object = {}> extends Process<P & CreepP
         }
         let deadCreeps = _.filter(this.memory.__creeps, (c: CreepObject<C>) => !(c.name in Game.creeps))
         if (deadCreeps.length > 0) {
+            for (let c of deadCreeps) {
+                this.onCreepDeath(c.memory);
+            }
             this.memory.__creeps = _.filter(this.memory.__creeps, (c: CreepObject<C>) => c.name in Game.creeps)
-            this.onCreepDeath();
             this.checkSpawning();
         }
         for (let x = 0; x < this.memory.__creeps.length; x++) {
@@ -207,7 +209,7 @@ abstract class CreepProcess<P, C extends Object = {}> extends Process<P & CreepP
 
     abstract runCreep(c: Creep, creepMemory: C): void;
 
-    abstract onCreepDeath(): void;
+    abstract onCreepDeath(creepMemory: C): void;
 
     abstract generateSpawnRequest(): [ratio: BodyPartConstant[], targetScale: number, baseparts: (BodyPartConstant[] | undefined), maxCreeps: (number | undefined)];
 

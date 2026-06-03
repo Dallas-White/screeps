@@ -1,23 +1,46 @@
 import Kernel from "Kernel";
 import Process, { ProcessRegistry } from "Process";
+import { CarrierJobFinishedCallback } from "./LogisticsManager";
+import RoomManagerProcess from "./RoomManagerProcess";
 
 interface TowerProcessMemory {
     tower: Id<StructureTower>
     repairing: boolean
+    refillJob: LogisticsTaskID | undefined
 }
-export default class TowerProcess extends Process<TowerProcessMemory> {
+export default class TowerProcess extends Process<TowerProcessMemory> implements CarrierJobFinishedCallback {
 
-    constructor(kernel: Kernel, parent: Process, tower: StructureTower) {
+    constructor(kernel: Kernel, parent: RoomManagerProcess, tower: StructureTower) {
         super(kernel, parent, {
             tower: tower.id,
             repairing: false,
+            refillJob: undefined
         })
     }
+
+    onCarrierJobFinished(id: LogisticsTask): void {
+        this.memory.refillJob = undefined
+    }
+
     run(): void {
         let tower = Game.getObjectById(this.memory.tower) as StructureTower
         if (!tower) {
             this.shutdown()
             return
+        }
+        if (tower.store.getFreeCapacity(RESOURCE_ENERGY) > 0) {
+            if (!this.memory.refillJob) {
+                this.memory.refillJob = (this.getParent() as RoomManagerProcess).getLogisticsManager().addLogisticTask({
+                    priority: 1000,
+                    amount: tower.store.getFreeCapacity(RESOURCE_ENERGY),
+                    source: undefined,
+                    dest: tower.id,
+                    resource: RESOURCE_ENERGY,
+                    callback: this.getPID()
+                })
+            } else {
+                (this.getParent() as RoomManagerProcess).getLogisticsManager().resizeTask(this.memory.refillJob, tower.store.getFreeCapacity(RESOURCE_ENERGY))
+            }
         }
         let room = tower.room
         let enemys = room.find(FIND_HOSTILE_CREEPS)

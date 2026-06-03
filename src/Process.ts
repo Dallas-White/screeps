@@ -125,3 +125,7 @@ export class ProcessRegistry {
     }
 
 }
+
+export function registerProcess(c: abstract new (...args: any[]) => Process) {
+    ProcessRegistry.register(c.name, c)
+}
