@@ -21,7 +21,8 @@ export default class WallBuilderProcess extends EnergyCreepProcess<{ scale: numb
         } else if (repairCode != OK) {
             return actResult.SELECTNEW
         }
-        if (Game.time % 50 == 0) return actResult.SELECTNEW
+        //TODO: check if this can be replaced with a capacity check to check for a new one when the creep runs out of energy
+        if (Game.time % 10 == 0 || creep.room.controller!.level < 3) return actResult.SELECTNEW
         return actResult.CONTINUE;
     }
     getScale(): number {

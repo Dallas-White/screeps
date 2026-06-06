@@ -145,7 +145,7 @@ class RoomManagerProcess extends Process<RoomManagerMemory> implements SpawnMana
             let wallBuilderProc = new WallBuilderProcess(this.kernel, this, this)
             this.kernel.addProcess(wallBuilderProc)
             this.memory.wallBuilderProcess = wallBuilderProc.getPID()
-        } else if (structure.structureType == STRUCTURE_ROAD || structure.structureType == STRUCTURE_CONTAINER && (!this.memory.towers || Object.keys(this.memory.towers).length == 0) && !this.memory.repairerProcess) {
+        } else if ((structure.structureType == STRUCTURE_ROAD || structure.structureType == STRUCTURE_CONTAINER) && (!this.memory.towers || Object.keys(this.memory.towers).length == 0) && !this.memory.repairerProcess) {
 
             let repairProc = new RepairerProcess(this.kernel, this, this, this.memory.room)
             this.kernel.addProcess(repairProc)
@@ -238,10 +238,10 @@ class RoomManagerProcess extends Process<RoomManagerMemory> implements SpawnMana
             this.kernel.killProcess(this.getPID())
             return
         }
-        if (this.memory.repairerProcess && this.memory.towers) {
+        if (this.memory.repairerProcess && Object.keys(this.memory.towers).length > 0) {
             let damagedStrucures = Game.rooms[this.memory.room].find(FIND_STRUCTURES, { filter: (x) => x.hits < x.hitsMax && x.structureType != STRUCTURE_WALL && x.structureType != STRUCTURE_RAMPART })
             if (damagedStrucures.length == 0) {
-                this.kernel.killProcess(this.memory.repairerProcess);
+                this.kernel.shutdownProcess(this.memory.repairerProcess);
                 delete this.memory.repairerProcess
             }
         }

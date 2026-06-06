@@ -18,7 +18,7 @@ export function moveToRoom(creep: Creep, roomName: string) {
                 } else if (isSourceKeeper) {
                     return 20
                 } else {
-                    return 2.5;
+                    return 10;
                 }
             }
         })

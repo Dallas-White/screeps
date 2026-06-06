@@ -79,9 +79,13 @@ export class RoomBootstrapProcess extends CreepProcess<RoomBootstrapProcessMemor
                 creepMemory.state = BootstrapCreepState.DEPOSITING
             }
         } else if (creepMemory.state == BootstrapCreepState.DEPOSITING) {
+            if (c.store.getUsedCapacity() == 0) {
+                creepMemory.state = BootstrapCreepState.FETCHING
+                return
+            }
             let transferTarget = c.pos.findClosestByRange(FIND_MY_STRUCTURES, { filter: (struct) => (struct.structureType == STRUCTURE_SPAWN || struct.structureType == STRUCTURE_EXTENSION) && struct.store.getFreeCapacity(RESOURCE_ENERGY) > 0 });
             if (!transferTarget) {
-                let buildTarget = c.pos.findClosestByRange(FIND_CONSTRUCTION_SITES);
+                let buildTarget = c.pos.findClosestByRange(FIND_CONSTRUCTION_SITES, { filter: (structure) => structure.structureType == STRUCTURE_SPAWN });
                 if (!buildTarget) {
                     this.park(c)
                     return

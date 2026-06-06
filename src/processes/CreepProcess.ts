@@ -149,9 +149,7 @@ abstract class CreepProcess<P, C extends Object = {}> extends Process<P & CreepP
             this.memory.__spawningRatio = 0
             console.log("Time: " + Game.time + " WARNING: Spawning Ratio of " + this.getPID() + " is below 0")
         }
-        if (!this.memory.__creeps) {
-            this.memory.__creeps = []
-        }
+
         if (this.memory.__shuttingDown) {
             this.memory.__creeps = _.filter(this.memory.__creeps, (c: CreepObject<C>) => c.name in Game.creeps)
             for (let creep of this.memory.__creeps) {
