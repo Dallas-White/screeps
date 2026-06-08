@@ -113,7 +113,10 @@ abstract class CreepProcess<P, C extends Object = {}> extends Process<P & CreepP
     abstract getSpawningPriority(): number;
 
     checkSpawning() {
-        console.log("checking spawning " + this.getPID());
+        if (!this.kernel.getProcess(this.memory.spawnManager)) {
+            this.shutdown();
+            return
+        }
         let [ratio, targetScale, baseparts, maxCreeps] = this.generateSpawnRequest()
         let aliveRatio = 0
         for (let x = 0; x < this.memory.__creeps.length; x++) {
@@ -137,7 +140,7 @@ abstract class CreepProcess<P, C extends Object = {}> extends Process<P & CreepP
     }
 
     run() {
-        if (!this.memory.__checkSpawned) {
+        if (!this.memory.__checkSpawned || ((Game.time + this.getPID()) % 20 == 0 && this.memory.__creeps.length == 0)) {
             this.checkSpawning();
             this.memory.__checkSpawned = true;
         }

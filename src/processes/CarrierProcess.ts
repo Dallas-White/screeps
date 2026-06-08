@@ -7,7 +7,7 @@ import RoomManagerProcess from "./RoomManagerProcess";
 import { moveToRoom } from "utils/creepUtils";
 import { drop } from "lodash";
 import { SpawnManager } from "SpawnManager";
-import { LogisticsAssignment, LogisticsManager } from "./LogisticsManager";
+import { LogisticsAssignment, LogisticsEndpoint, LogisticsManager } from "./LogisticsManager";
 
 enum CarrierCreepState {
     FETCHING = 0,
@@ -22,6 +22,29 @@ interface CarrierProcessMemory {
     logisticsManager: Pid<LogisticsManager>
     scale: number
     room: string
+}
+
+function GreedyPathing(startingPos: RoomPosition, stops: Array<LogisticsEndpoint>): LogisticsEndpoint[] {
+    let newStops: Array<LogisticsEndpoint> = []
+    let currentPos: undefined | RoomPosition = startingPos
+    while (stops.length > 0) {
+        let closestRange = 99
+        let closestIndex = 0
+        if (currentPos != undefined) {
+            for (let s in stops) {
+                if (!stops[s].location) continue;
+                let range = currentPos.getRangeTo(Game.getObjectById(stops[s].location!)!.pos)
+                if (range < closestRange) {
+                    closestIndex = +s
+                    closestRange = range
+                }
+            }
+        }
+        newStops.push(stops[closestIndex])
+        currentPos = stops[closestIndex].location ? Game.getObjectById(stops[closestIndex].location!)?.pos : undefined
+        stops.splice(closestIndex, 1)
+    }
+    return newStops
 }
 
 export default class CarrierProcess extends CreepProcess<CarrierProcessMemory, CarrierCreepMemory> {
@@ -80,43 +103,66 @@ export default class CarrierProcess extends CreepProcess<CarrierProcessMemory, C
             return
         }
         if (creepMemory.state == CarrierCreepState.FETCHING) {
-            if (c.store.getUsedCapacity() >= creepMemory.assignment.amount) {
+            if (creepMemory.assignment.source.length == 0) {
                 creepMemory.state = CarrierCreepState.DEPOSITING
                 return
             }
             let source: AnyStoreStructure | Resource
-            if (creepMemory.assignment.source && Game.getObjectById(creepMemory.assignment.source)) {
-                source = Game.getObjectById(creepMemory.assignment.source)!
-            } else if (c.room.storage && c.room.storage.store[creepMemory.assignment.resource] >= creepMemory.assignment.amount) {
+            if (creepMemory.assignment.source[0].location && Game.getObjectById(creepMemory.assignment.source[0].location)) {
+                source = Game.getObjectById(creepMemory.assignment.source[0].location)!
+            } else if (c.room.storage && c.room.storage.store[creepMemory.assignment.source[0].resource] >= creepMemory.assignment.source[0].amount) {
                 source = c.room.storage
             } else {
-                let containers = c.room.find(FIND_STRUCTURES, { filter: (s) => s.structureType == STRUCTURE_CONTAINER && (!creepMemory.assignment?.amount || s.store[creepMemory.assignment?.resource] > creepMemory.assignment?.amount) })
+                let containers = c.room.find(FIND_STRUCTURES, { filter: (s) => s.structureType == STRUCTURE_CONTAINER && (!creepMemory.assignment?.source[0].amount || s.store[creepMemory.assignment?.source[0].resource] > creepMemory.assignment?.source[0].amount) })
                 if (containers.length == 0) {
-                    let dropped_resources = c.room.find(FIND_DROPPED_RESOURCES, { filter: (s) => s.resourceType == creepMemory.assignment?.resource })
+                    let dropped_resources = c.room.find(FIND_DROPPED_RESOURCES, { filter: (s) => s.resourceType == creepMemory.assignment?.source[0].resource })
                     if (dropped_resources.length == 0) {
-                        this.kernel.getProcess(this.memory.logisticsManager)?.returnAssignment(creepMemory.assignment)
-                        creepMemory.state = CarrierCreepState.FETCHING
+                        for (let x of creepMemory.assignment.source) {
+                            this.kernel.getProcess(this.memory.logisticsManager)?.returnAssignment(x);
+                        }
+                        for (let x of creepMemory.assignment.dest) {
+                            this.kernel.getProcess(this.memory.logisticsManager)?.returnAssignment(x);
+                        }
                         creepMemory.assignment = undefined
+                        creepMemory.state = CarrierCreepState.FETCHING
                         return
                     }
-                    source = dropped_resources[0]
+                    source = c.pos.findClosestByRange(dropped_resources)!
                 } else {
-                    source = containers[0] as StructureContainer
+                    source = c.pos.findClosestByRange(containers) as StructureContainer
                 }
             }
-            let amountAvailable = source instanceof Resource ? source.amount : source.store[creepMemory.assignment.resource]
-            if (amountAvailable < creepMemory.assignment.amount) {
-                this.kernel.getProcess(this.memory.logisticsManager)?.returnAssignment(creepMemory.assignment)
+            let amountAvailable = source instanceof Resource ? source.amount : source.store[creepMemory.assignment.source[0].resource]
+            if (amountAvailable < creepMemory.assignment.source[0].amount) {
+                for (let x of creepMemory.assignment.source) {
+                    this.kernel.getProcess(this.memory.logisticsManager)?.returnAssignment(x);
+                }
+                for (let x of creepMemory.assignment.dest) {
+                    this.kernel.getProcess(this.memory.logisticsManager)?.returnAssignment(x);
+                }
                 creepMemory.state = CarrierCreepState.FETCHING
                 creepMemory.assignment = undefined
                 return
             }
-            let withdrawCode = source instanceof Resource ? c.pickup(source) : c.withdraw(source, creepMemory.assignment.resource, creepMemory.assignment.amount - c.store.getUsedCapacity(creepMemory.assignment.resource))
-            if (withdrawCode == OK) {
-                creepMemory.state = CarrierCreepState.DEPOSITING
+            let withdrawCode = source instanceof Resource ? c.pickup(source) : c.withdraw(source, creepMemory.assignment.source[0].resource, creepMemory.assignment.source[0].amount)
+            if (withdrawCode == OK || withdrawCode == ERR_FULL) {
+                this.kernel.getProcess(this.memory.logisticsManager)?.completeAssignment(creepMemory.assignment.source[0]);
+                creepMemory.assignment.source.shift()
+                if (creepMemory.assignment.source.length == 0) {
+                    creepMemory.state = CarrierCreepState.DEPOSITING
+                    creepMemory.assignment.dest = GreedyPathing(c.pos, creepMemory.assignment.dest)
+                }
             } else if (withdrawCode == ERR_NOT_IN_RANGE) {
                 c.moveTo(source)
             } else {
+                for (let x of creepMemory.assignment.source) {
+                    this.kernel.getProcess(this.memory.logisticsManager)?.returnAssignment(x);
+                }
+                for (let x of creepMemory.assignment.dest) {
+                    this.kernel.getProcess(this.memory.logisticsManager)?.returnAssignment(x);
+                }
+                creepMemory.state = CarrierCreepState.FETCHING
+                creepMemory.assignment = undefined
                 console.log("ERROR: bad withdraw case: " + withdrawCode)
             }
         } else if (creepMemory.state == CarrierCreepState.DEPOSITING) {
@@ -124,14 +170,19 @@ export default class CarrierProcess extends CreepProcess<CarrierProcessMemory, C
                 creepMemory.state = CarrierCreepState.FETCHING
             }
             let dest: AnyStoreStructure
-            if (creepMemory.assignment.dest && Game.getObjectById(creepMemory.assignment.dest)) {
-                dest = Game.getObjectById(creepMemory.assignment.dest)!
-            } else if (c.room.storage && c.room.storage.store.getFreeCapacity() >= creepMemory.assignment.amount) {
+            if (creepMemory.assignment.dest[0].location && Game.getObjectById(creepMemory.assignment.dest[0].location)) {
+                dest = Game.getObjectById(creepMemory.assignment.dest[0].location)!
+            } else if (c.room.storage && c.room.storage.store.getFreeCapacity() >= creepMemory.assignment.dest[0].amount) {
                 dest = c.room.storage
             } else {
-                let containers = c.room.find(FIND_STRUCTURES, { filter: (s) => s.structureType == STRUCTURE_CONTAINER && !s.isSourceStructure && creepMemory.assignment!.amount >= s.store.getFreeCapacity() })
+                let containers = c.room.find(FIND_STRUCTURES, { filter: (s) => s.structureType == STRUCTURE_CONTAINER && !s.isSourceStructure && creepMemory.assignment!.dest[0].amount >= s.store.getFreeCapacity() })
                 if (containers.length == 0) {
-                    this.kernel.getProcess(this.memory.logisticsManager)?.returnAssignment(creepMemory.assignment)
+                    for (let x of creepMemory.assignment.source) {
+                        this.kernel.getProcess(this.memory.logisticsManager)?.returnAssignment(x);
+                    }
+                    for (let x of creepMemory.assignment.dest) {
+                        this.kernel.getProcess(this.memory.logisticsManager)?.returnAssignment(x);
+                    }
                     creepMemory.state = CarrierCreepState.FETCHING
                     creepMemory.assignment = undefined
                     return
@@ -143,15 +194,30 @@ export default class CarrierProcess extends CreepProcess<CarrierProcessMemory, C
                 creepMemory.assignment = undefined
                 return
             }*/
-            let returnCode = c.transfer(dest, creepMemory.assignment.resource, Math.min(creepMemory.assignment.amount, dest.store.getFreeCapacity(creepMemory.assignment.resource)!));
+            let returnCode = c.transfer(dest, creepMemory.assignment.dest[0].resource, Math.min(creepMemory.assignment.dest[0].amount, dest.store.getFreeCapacity(creepMemory.assignment.dest[0].resource)!));
             if (returnCode == OK) {
-                this.kernel.getProcess(this.memory.logisticsManager)?.completeAssignment(creepMemory.assignment)
-                creepMemory.assignment = undefined
-                creepMemory.state = CarrierCreepState.FETCHING
+                this.kernel.getProcess(this.memory.logisticsManager)?.completeAssignment(creepMemory.assignment.dest[0])
+                creepMemory.assignment.dest.shift()
+                if (creepMemory.assignment.dest.length == 0) {
+                    creepMemory.assignment = undefined
+                    creepMemory.state = CarrierCreepState.FETCHING
+                }
+            } else if (returnCode == ERR_FULL) {
+                this.kernel.getProcess(this.memory.logisticsManager)?.returnAssignment(creepMemory.assignment.dest[0])
+                creepMemory.assignment.dest.shift()
+                if (creepMemory.assignment.dest.length == 0) {
+                    creepMemory.assignment = undefined
+                    creepMemory.state = CarrierCreepState.FETCHING
+                }
             } else if (returnCode == ERR_NOT_IN_RANGE) {
                 c.moveTo(dest)
             } else {
-                this.kernel.getProcess(this.memory.logisticsManager)?.returnAssignment(creepMemory.assignment)
+                for (let x of creepMemory.assignment.source) {
+                    this.kernel.getProcess(this.memory.logisticsManager)?.returnAssignment(x);
+                }
+                for (let x of creepMemory.assignment.dest) {
+                    this.kernel.getProcess(this.memory.logisticsManager)?.returnAssignment(x);
+                }
                 creepMemory.state = CarrierCreepState.FETCHING
                 creepMemory.assignment = undefined
                 return
@@ -161,7 +227,12 @@ export default class CarrierProcess extends CreepProcess<CarrierProcessMemory, C
 
     onCreepDeath(creepMemory: CarrierCreepMemory): void {
         if (creepMemory.assignment) {
-            this.kernel.getProcess(this.memory.logisticsManager)?.returnAssignment(creepMemory.assignment);
+            for (let x of creepMemory.assignment.source) {
+                this.kernel.getProcess(this.memory.logisticsManager)?.returnAssignment(x);
+            }
+            for (let x of creepMemory.assignment.dest) {
+                this.kernel.getProcess(this.memory.logisticsManager)?.returnAssignment(x);
+            }
         }
     }
     generateSpawnRequest(): [ratio: BodyPartConstant[], targetScale: number, baseparts: BodyPartConstant[] | undefined, maxCreeps: number | undefined] {

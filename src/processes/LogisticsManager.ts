@@ -1,6 +1,6 @@
 import { randomBytes } from "crypto";
 import Kernel from "Kernel";
-import { assign } from "lodash";
+import { assign, pull } from "lodash";
 import Process, { ProcessRegistry } from "Process";
 import { SpawnManager } from "SpawnManager";
 import { EnergyConsumer } from "utils/EnergyBalance";
@@ -11,12 +11,16 @@ export interface CarrierJobFinishedCallback extends Process {
     onCarrierJobFinished(id: LogisticsTask): void
 }
 
-export interface LogisticsAssignment {
-    amount: number,
-    source: Id<AnyStoreStructure> | undefined,
-    dest: Id<AnyStoreStructure> | undefined,
+export interface LogisticsEndpoint {
+    location: Id<AnyStoreStructure> | undefined
+    id: LogisticsTaskID | undefined,
     resource: ResourceConstant,
-    id: LogisticsTaskID
+    amount: number
+}
+
+export interface LogisticsAssignment {
+    source: Array<LogisticsEndpoint>
+    dest: Array<LogisticsEndpoint>
 }
 
 interface LogisticsManagerMemory {
@@ -108,51 +112,70 @@ export class LogisticsManager extends Process<LogisticsManagerMemory> implements
     }
 
     getTask(capacity: number): LogisticsAssignment | undefined {
-        for (let x of this.memory.logisticsTasks) {
-            if ((x.task.amount - x.claimed - x.done) > 0) {
-                let assignedAmount = Math.min(capacity, x.task.amount - x.claimed - x.done);
-                if (x.task.source) {
-                    let sourceAmount = Game.getObjectById(x.task.source)?.store[x.task.resource]
-                    if (!sourceAmount || sourceAmount < assignedAmount)
-                        continue
-                }
-                if (x.task.dest) {
-                    let destAmount = Game.getObjectById(x.task.dest)?.store.getFreeCapacity(x.task.resource)
-                    if (!destAmount || destAmount == 0) continue
+        let pullAmount: Partial<Record<ResourceConstant, number>> = {}
+        let pushAmount: Partial<Record<ResourceConstant, number>> = {}
+        let remaining = capacity
+        let sources: Array<LogisticsEndpoint> = []
+        let destinations: Array<LogisticsEndpoint> = []
 
-                    if (destAmount && destAmount < assignedAmount)
-                        assignedAmount = destAmount
-                }
-                x.claimed += assignedAmount;
-                return {
-                    amount: assignedAmount,
-                    source: x.task.source,
-                    dest: x.task.dest,
-                    resource: x.task.resource,
-                    id: x.id
-                }
+        for (let x of this.memory.logisticsTasks) {
+            if (remaining <= 0) break
+            let pending = x.task.amount - x.claimed - x.done
+            if (pending <= 0) continue
+
+            if (sources.length > 0 && sources[0].resource !== x.task.resource) continue
+            if (sources.length > 0 && !!x.task.source !== !!sources[0].location) continue
+
+            let assigned = Math.min(remaining, pending)
+
+            if (x.task.source) {
+                let have = Game.getObjectById(x.task.source)?.store[x.task.resource]
+                if (!have || have < assigned) continue
+            }
+
+            if (x.task.dest) {
+                let have = Game.getObjectById(x.task.dest)?.store.getFreeCapacity(x.task.resource)
+                if (!have || have === 0) continue
+                if (have < assigned) assigned = have
+            }
+
+            x.claimed += assigned
+            remaining -= assigned
+            if (x.task.source) {
+                sources.push({ amount: assigned, location: x.task.source, id: x.task.dest ? x.id : undefined, resource: x.task.resource })
+            } else {
+                pullAmount[x.task.resource] = (pullAmount[x.task.resource] ?? 0) + assigned
+            }
+            if (x.task.dest) {
+                destinations.push({ amount: assigned, location: x.task.dest, id: x.id, resource: x.task.resource })
+            } else {
+                pushAmount[x.task.resource] = (pushAmount[x.task.resource] ?? 0) + assigned
             }
         }
-        return undefined
+        if (sources.length === 0 && Object.keys(pullAmount).length == 0) return undefined
+        if (Object.keys(pullAmount).length > 0) {
+            for (let x of Object.keys(pullAmount)) {
+                sources.push({ amount: pullAmount[x as ResourceConstant]!, location: undefined, id: undefined, resource: x as ResourceConstant })
+            }
+        }
+        if (Object.keys(pushAmount).length > 0) {
+            for (let x of Object.keys(pushAmount)) {
+                destinations.push({ amount: pushAmount[x as ResourceConstant]!, location: undefined, id: undefined, resource: x as ResourceConstant })
+            }
+        }
+        return { source: sources, dest: destinations }
     }
-
-    /* this handles getting a new logistics assignment when the old one's destination is full or the source does not have enough */
-    swapAssignment(currentAssignment: LogisticsAssignment, capacity: number): LogisticsAssignment | undefined {
-        let currentTaskIdx = this.memory.logisticsTasks.findIndex((t: StoredLogisticsTask) => t.id == currentAssignment.id);
-        if (currentTaskIdx != -1)
-            this.memory.logisticsTasks[currentTaskIdx].claimed -= currentAssignment.amount
-        return this.getTask(capacity)
-    }
-
     /*this function handles canceling an assignment, it is called when a creep died*/
-    returnAssignment(currentAssignment: LogisticsAssignment) {
+    returnAssignment(currentAssignment: LogisticsEndpoint) {
+        if (currentAssignment.id == undefined) return;
         let currentTaskIdx = this.memory.logisticsTasks.findIndex((t: StoredLogisticsTask) => t.id == currentAssignment.id);
         if (currentTaskIdx != -1) {
             this.memory.logisticsTasks[currentTaskIdx].claimed -= currentAssignment.amount
         }
     }
 
-    completeAssignment(assignment: LogisticsAssignment) {
+    completeAssignment(assignment: LogisticsEndpoint) {
+        if (assignment.id == undefined) return;
         let taskIdx = this.memory.logisticsTasks.findIndex((t: StoredLogisticsTask) => t.id == assignment.id);
         if (taskIdx == -1) return;
         this.memory.logisticsTasks[taskIdx].claimed -= assignment.amount

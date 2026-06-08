@@ -61,6 +61,7 @@ export default class Kernel {
             try {
                 currentProcess.run()
             } catch (e) {
+                console.log("Error caught in PID: " + currentProcess.getPID())
                 console.log(e)
                 console.log((e as Error).stack)
             }
