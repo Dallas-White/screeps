@@ -7,7 +7,9 @@ import { max } from "lodash";
 import { gatherEnergy, moveToRoom } from "utils/creepUtils";
 import { SpawnManager } from "SpawnManager";
 
-const CONSTRUCTION_SITE_PRIORITES: Array<StructureConstant> = [STRUCTURE_SPAWN, STRUCTURE_EXTENSION, STRUCTURE_CONTAINER, STRUCTURE_WALL, STRUCTURE_RAMPART]
+const CONSTRUCTION_SITE_PRIORITES: Array<StructureConstant> = [STRUCTURE_SPAWN, STRUCTURE_WALL, STRUCTURE_RAMPART, STRUCTURE_EXTENSION, STRUCTURE_CONTAINER]
+const MIN_RAMPART_HITS = (RAMPART_DECAY_AMOUNT / RAMPART_DECAY_TIME) * 2000
+
 
 export interface ConstructionFinishedCallback extends Process {
     onConstructionFinished(type: StructureConstant, pos: RoomPosition): void
@@ -16,7 +18,7 @@ export interface ConstructionFinishedCallback extends Process {
 
 interface BuilderProcessMemory {
     scale: number,
-    target: Id<ConstructionSite> | undefined,
+    target: Id<ConstructionSite> | Id<StructureRampart> | undefined,
     callback: Pid<ConstructionFinishedCallback> | undefined
     room: string
     targetStructureType: StructureConstant | undefined,
@@ -34,6 +36,7 @@ interface BuilderCreepMemory {
 
 
 export default class BuilderProcess extends CreepProcess<BuilderProcessMemory, BuilderCreepMemory> {
+    scannedForTarget = false;
     initCreepMemory(): BuilderCreepMemory {
         return { state: BuilderCreepState.FETCHING, __fetchTarget: undefined }
     }
@@ -56,6 +59,13 @@ export default class BuilderProcess extends CreepProcess<BuilderProcessMemory, B
         return [[MOVE, WORK, CARRY], this.memory.scale, [], undefined]
     }
     selectTarget(): boolean {
+        if (this.scannedForTarget) return false;
+        this.scannedForTarget = true
+        let derilectRamparts = Game.rooms[this.memory.room].find(FIND_MY_STRUCTURES, { filter: (s) => s.structureType == STRUCTURE_RAMPART && s.hits < MIN_RAMPART_HITS })
+        if (derilectRamparts.length > 0) {
+            this.memory.target = derilectRamparts[0].id as Id<StructureRampart>
+            return true
+        }
         let constructionSite = Game.rooms[this.memory.room].find(FIND_CONSTRUCTION_SITES);
         for (let structureType of CONSTRUCTION_SITE_PRIORITES) {
             let targetSites = _.filter(constructionSite, (site: ConstructionSite) => site.structureType == structureType)
@@ -114,11 +124,24 @@ export default class BuilderProcess extends CreepProcess<BuilderProcessMemory, B
                     return;
                 }
             }
-            let buildResult = c.build(targetObj as ConstructionSite)
-            if (buildResult == ERR_NOT_IN_RANGE) {
-                c.moveTo(targetObj as ConstructionSite)
-            } else if (buildResult == ERR_INVALID_TARGET) {
-                this.selectTarget();
+
+            if (targetObj instanceof StructureRampart) {
+                let repairResult = c.repair(targetObj)
+                if (repairResult == ERR_NOT_IN_RANGE) {
+                    c.moveTo(targetObj)
+                } else if (repairResult != OK) {
+                    this.selectTarget()
+                }
+                if (targetObj.hits > RAMPART_DECAY_AMOUNT * 4) {
+                    this.selectTarget()
+                }
+            } else {
+                let buildResult = c.build(targetObj as ConstructionSite)
+                if (buildResult == ERR_NOT_IN_RANGE) {
+                    c.moveTo(targetObj as ConstructionSite)
+                } else if (buildResult == ERR_INVALID_TARGET) {
+                    this.selectTarget();
+                }
             }
         }
     }

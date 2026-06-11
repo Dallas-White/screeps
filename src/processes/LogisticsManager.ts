@@ -142,7 +142,7 @@ export class LogisticsManager extends Process<LogisticsManagerMemory> implements
             x.claimed += assigned
             remaining -= assigned
             if (x.task.source) {
-                sources.push({ amount: assigned, location: x.task.source, id: x.task.dest ? x.id : undefined, resource: x.task.resource })
+                sources.push({ amount: assigned, location: x.task.source, id: x.task.dest ? undefined : x.id, resource: x.task.resource })
             } else {
                 pullAmount[x.task.resource] = (pullAmount[x.task.resource] ?? 0) + assigned
             }
@@ -208,7 +208,7 @@ export class LogisticsManager extends Process<LogisticsManagerMemory> implements
         if (Game.time % 1000 == 0) {
             if (this.memory.queueEMA > 5) {
                 this.memory.scale += 1
-                this.memory.scale = Math.min(12, this.memory.scale)
+                this.memory.scale = Math.min(6, this.memory.scale)
             } else if (this.memory.queueEMA < 0.1) {
                 this.memory.scale -= 1
                 this.memory.scale = Math.max(2, this.memory.scale)

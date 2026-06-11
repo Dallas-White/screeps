@@ -42,7 +42,7 @@ export default class PillagerProcess extends CreepProcess<PillagerProcessMemory,
             if (c.room.name != this.memory.destination || c.pos.x == 49 || c.pos.x == 0 || c.pos.y == 49 || c.pos.y == 0) {
                 moveToRoom(c, this.memory.destination)
             } else {
-                let openStorage = c.pos.findClosestByRange(FIND_STRUCTURES, { filter: (s => (s.structureType == STRUCTURE_CONTAINER || s.structureType == STRUCTURE_STORAGE) && s.store.getFreeCapacity() > 0) })
+                let openStorage = c.room.storage ? c.room.storage : c.pos.findClosestByRange(FIND_STRUCTURES, { filter: (s => (s.structureType == STRUCTURE_CONTAINER || s.structureType == STRUCTURE_STORAGE) && s.store.getFreeCapacity() > 0) })
                 if (!openStorage) {
                     for (var resource of RESOURCES_ALL) {
                         if (c.store.getUsedCapacity(resource) > 0) {

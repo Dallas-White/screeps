@@ -5,6 +5,8 @@ import { EnergyProducer } from "utils/EnergyBalance";
 import { moveToRoom } from "utils/creepUtils";
 import { forEachRight } from "lodash";
 import { SpawnManager } from "SpawnManager";
+import RoomManagerProcess from "./RoomManagerProcess";
+import { CarrierJobFinishedCallback } from "./LogisticsManager";
 
 const ENERGY_MINING_ALPHA = 0.01
 interface HarvesterProcessMemory {
@@ -14,8 +16,10 @@ interface HarvesterProcessMemory {
     minedEnergy: number
     miningTimer: number
     container: RoomPosition | undefined
+    containerID: Id<StructureContainer> | undefined
+    pushRequest: LogisticsTaskID | undefined
 }
-export default class HarvesterProcess extends CreepProcess<HarvesterProcessMemory, {}> implements EnergyProducer {
+export default class HarvesterProcess extends CreepProcess<HarvesterProcessMemory, {}> implements EnergyProducer, CarrierJobFinishedCallback {
 
     generateSpawnRequest(): [ratio: BodyPartConstant[], targetScale: number, baseparts: (BodyPartConstant[] | undefined), maxCreeps: (number | undefined)] {
         if (Game.getObjectById(this.memory.source) && !this.memory.freeSpaces) {
@@ -50,10 +54,15 @@ export default class HarvesterProcess extends CreepProcess<HarvesterProcessMemor
             link: undefined,
             minedEnergy: 0,
             miningTimer: 0,
-            container: undefined
+            container: undefined,
+            containerID: undefined,
+            pushRequest: undefined
         });
         this.findAdjacentContainers()
         this.resetEnergyProduction()
+    }
+    onCarrierJobFinished(id: LogisticsTask): void {
+        this.memory.pushRequest = undefined
     }
 
     resetEnergyProduction(): void {
@@ -76,12 +85,22 @@ export default class HarvesterProcess extends CreepProcess<HarvesterProcessMemor
     runCreep(c: Creep): void {
         let src = Game.getObjectById(this.memory.source) as Source;
         let mineResult = c.harvest(src);
-        if ((!this.memory.container || !this.memory.link) && Game.time % 1000 == 0) {
+        if ((!this.memory.containerID || !this.memory.link) && Game.time % 1000 == 0) {
             this.findAdjacentContainers()
         }
         if (src.room.name != c.room.name) {
             moveToRoom(c, src.room.name)
             return
+        }
+        if (this.memory.containerID) {
+            let container = Game.getObjectById(this.memory.containerID)
+            if (container && container.store.getFreeCapacity() < 500) {
+                if (!this.memory.pushRequest) {
+                    this.memory.pushRequest = this.kernel.getProcess((this.memory.spawnManager) as Pid<RoomManagerProcess>)?.getLogisticsManager().addLogisticTask({ source: this.memory.containerID, resource: RESOURCE_ENERGY, amount: 1500, callback: this.getPID(), dest: undefined, priority: 500 })
+                } else {
+                    this.kernel.getProcess((this.memory.spawnManager) as Pid<RoomManagerProcess>)?.getLogisticsManager().resizeTask(this.memory.pushRequest, 1500)
+                }
+            }
         }
         if (this.memory.container && c.pos != new RoomPosition(this.memory.container.x, this.memory.container.y, this.memory.container.roomName) && c.room.lookForAt(LOOK_CREEPS, this.memory.container.x, this.memory.container.y).length == 0) {
             c.moveTo(new RoomPosition(this.memory.container.x, this.memory.container.y, this.memory.container.roomName))
@@ -102,6 +121,7 @@ export default class HarvesterProcess extends CreepProcess<HarvesterProcessMemor
         let container = (Game.getObjectById(this.memory.source) as Source).pos.findInRange(FIND_STRUCTURES, 1, { filter: (x) => x.structureType == STRUCTURE_CONTAINER })
         if (container.length != 0) {
             this.memory.container = container[0].pos
+            this.memory.containerID = container[0].id as Id<StructureContainer>
             this.checkSpawning()
         } else {
             this.memory.container = undefined

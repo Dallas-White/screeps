@@ -269,7 +269,7 @@ class RoomManagerProcess extends Process<RoomManagerMemory> implements SpawnMana
         if (Game.time % 5 == 0) {
             let sites = Game.rooms[this.memory.room].find(FIND_CONSTRUCTION_SITES)
             if (sites.length > 0 && (!this.memory.constructionProcess || !this.kernel.getProcess(this.memory.constructionProcess))) {
-                let constructionProcess = new BuilderProcess(this.kernel, this, this.getParent() as init, this.memory.room, this)
+                let constructionProcess = new BuilderProcess(this.kernel, this, this, this.memory.room, this)
                 this.kernel.addProcess(constructionProcess)
                 this.memory.constructionProcess = constructionProcess.getPID()
             } else if (sites.length == 0) {

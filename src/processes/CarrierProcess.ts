@@ -113,7 +113,7 @@ export default class CarrierProcess extends CreepProcess<CarrierProcessMemory, C
             } else if (c.room.storage && c.room.storage.store[creepMemory.assignment.source[0].resource] >= creepMemory.assignment.source[0].amount) {
                 source = c.room.storage
             } else {
-                let containers = c.room.find(FIND_STRUCTURES, { filter: (s) => s.structureType == STRUCTURE_CONTAINER && (!creepMemory.assignment?.source[0].amount || s.store[creepMemory.assignment?.source[0].resource] > creepMemory.assignment?.source[0].amount) })
+                let containers = c.room.find(FIND_STRUCTURES, { filter: (s) => (s.structureType == STRUCTURE_CONTAINER || s.structureType == STRUCTURE_LINK) && (!creepMemory.assignment?.source[0].amount || s.store[creepMemory.assignment?.source[0].resource] > creepMemory.assignment?.source[0].amount) })
                 if (containers.length == 0) {
                     let dropped_resources = c.room.find(FIND_DROPPED_RESOURCES, { filter: (s) => s.resourceType == creepMemory.assignment?.source[0].resource })
                     if (dropped_resources.length == 0) {
@@ -175,7 +175,7 @@ export default class CarrierProcess extends CreepProcess<CarrierProcessMemory, C
             } else if (c.room.storage && c.room.storage.store.getFreeCapacity() >= creepMemory.assignment.dest[0].amount) {
                 dest = c.room.storage
             } else {
-                let containers = c.room.find(FIND_STRUCTURES, { filter: (s) => s.structureType == STRUCTURE_CONTAINER && !s.isSourceStructure && creepMemory.assignment!.dest[0].amount >= s.store.getFreeCapacity() })
+                let containers = c.room.find(FIND_STRUCTURES, { filter: (s) => (s.structureType == STRUCTURE_CONTAINER || s.structureType == STRUCTURE_LINK) && !s.isSourceStructure && creepMemory.assignment!.dest[0].amount >= (s.store.getFreeCapacity(creepMemory.assignment!.dest[0].resource) ?? 0) })
                 if (containers.length == 0) {
                     for (let x of creepMemory.assignment.source) {
                         this.kernel.getProcess(this.memory.logisticsManager)?.returnAssignment(x);
