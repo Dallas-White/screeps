@@ -14,7 +14,6 @@ import TowerProcess from "./TowerProcess";
 import AttackCreepProcess from "./combat/AttackCreepProcess";
 import HealingProcess from "./combat/HealingProcess";
 import MineralHarvester from "./mineralManagement/MineralHarvester";
-import MineralHauler from "./mineralManagement/MineralHauler";
 import LinkManager from "./LinkManager";
 import floodFill from "utils/floodfill";
 import { SpawnCallback, SpawnManager } from "SpawnManager";
@@ -38,7 +37,6 @@ interface RoomManagerMemory {
     repairerProcess: Pid<RepairerProcess> | undefined;
     linkProcess: Pid<LinkManager> | undefined;
     mineralHarvester: Pid<MineralHarvester> | undefined;
-    mineralHauler: Pid<MineralHauler> | undefined;
     upgradeProcess: Pid<UpgradeProcess>;
     logisticsManager: Pid<LogisticsManager>;
     spawnEMA: {
@@ -65,7 +63,6 @@ class RoomManagerProcess extends Process<RoomManagerMemory> implements SpawnMana
             repairerProcess: undefined,
             linkProcess: undefined,
             mineralHarvester: undefined,
-            mineralHauler: undefined,
             upgradeProcess: 0 as Pid<UpgradeProcess>,
             spawnEMA: { ema: 0, time: Game.time },
             logisticsManager: 0 as Pid<LogisticsManager>,
@@ -158,18 +155,6 @@ class RoomManagerProcess extends Process<RoomManagerMemory> implements SpawnMana
             this.kernel.addProcess(mineralProc)
         }
 
-        if (structure.structureType == STRUCTURE_CONTAINER) {
-            if (Game.rooms[this.memory.room].controller!.level > 5 && !this.memory.mineralHauler) {
-                let mineral = Game.rooms[this.memory.room].find(FIND_MINERALS)[0]
-                let container = mineral.pos.findInRange(FIND_STRUCTURES, 1, { filter: (x) => x.structureType == STRUCTURE_CONTAINER })[0] as StructureContainer
-                if (container) {
-                    let resourceType = mineral.mineralType
-                    let mineralHaulerProc = new MineralHauler(this.kernel, this, this.memory.room, container, resourceType)
-                    this.memory.mineralHauler = mineralHaulerProc.getPID()
-                    this.kernel.addProcess(mineralHaulerProc)
-                }
-            }
-        }
     }
     getMaxEnergy(from_init = false): number {
         if (Game.rooms[this.memory.room].energyCapacityAvailable == 0 && !from_init) {

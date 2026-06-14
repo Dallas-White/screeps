@@ -1,18 +1,27 @@
 import Kernel from "Kernel";
 import { ProcessRegistry } from "Process";
 import CreepProcess from "processes/CreepProcess";
+import { CarrierJobFinishedCallback } from "processes/LogisticsManager";
+import RoomManagerProcess from "processes/RoomManagerProcess";
 import { SpawnManager } from "SpawnManager";
 
 interface MinerlaHarvesterMemory {
     extractor: Id<Mineral>
-    container: RoomPosition | undefined
+    container: {
+        id: Id<StructureContainer>
+        pos: RoomPosition
+    } | undefined
+    storeJob: LogisticsTaskID | undefined
 }
 
-export default class MineralHarvester extends CreepProcess<MinerlaHarvesterMemory> {
+export default class MineralHarvester extends CreepProcess<MinerlaHarvesterMemory> implements CarrierJobFinishedCallback {
 
-    constructor(kernel: Kernel, parent: SpawnManager, mineral: Mineral) {
-        super(kernel, parent, parent, { extractor: mineral.id, container: undefined })
+    constructor(kernel: Kernel, parent: RoomManagerProcess, mineral: Mineral) {
+        super(kernel, parent, parent, { extractor: mineral.id, container: undefined, storeJob: undefined })
         this.memory.extractor = mineral.id
+    }
+    onCarrierJobFinished(id: LogisticsTask): void {
+        this.memory.storeJob = undefined
     }
 
     initCreepMemory(): {} {
@@ -27,9 +36,33 @@ export default class MineralHarvester extends CreepProcess<MinerlaHarvesterMemor
         if (!this.memory.container) {
             this.findAdjacentContainers()
         }
-        if (this.memory.container && c.room.lookForAt(LOOK_CREEPS, this.memory.container.x, this.memory.container.y).length == 0) {
-            c.moveTo(new RoomPosition(this.memory.container.x, this.memory.container.y, this.memory.container.roomName))
+        if (this.memory.container && c.room.lookForAt(LOOK_CREEPS, this.memory.container.pos.x, this.memory.container.pos.y).length == 0) {
+            c.moveTo(new RoomPosition(this.memory.container.pos.x, this.memory.container.pos.y, this.memory.container.pos.roomName))
             return
+        }
+        if (this.memory.container) {
+            let containerObject = Game.getObjectById(this.memory.container.id);
+            let mineralObject = Game.getObjectById(this.memory.extractor)!
+            if (containerObject) {
+                let mineralStore = containerObject.store[mineralObject.mineralType]
+                if (mineralStore > 0) {
+                    if (this.memory.storeJob) {
+                        (this.getParent() as RoomManagerProcess).getLogisticsManager().resizeTask(this.memory.storeJob, mineralStore)
+                    } else {
+                        this.memory.storeJob = (this.getParent() as RoomManagerProcess).getLogisticsManager().addLogisticTask({
+                            priority: 250,
+                            amount: mineralStore,
+                            source: this.memory.container.id,
+                            dest: c.room.storage?.id,
+                            resource: mineralObject.mineralType,
+                            callback: this.getPID()
+                        })
+
+                    }
+                }
+            } else {
+                this.memory.container = undefined
+            }
         }
         let returnCode = c.harvest(Game.getObjectById(this.memory.extractor)! as Mineral)
         if (returnCode == ERR_NOT_IN_RANGE) c.moveTo(Game.getObjectById(this.memory.extractor)! as Mineral)
@@ -39,7 +72,10 @@ export default class MineralHarvester extends CreepProcess<MinerlaHarvesterMemor
     findAdjacentContainers() {
         let container = (Game.getObjectById(this.memory.extractor) as Mineral).pos.findInRange(FIND_STRUCTURES, 1, { filter: (x) => x.structureType == STRUCTURE_CONTAINER })
         if (container.length != 0) {
-            this.memory.container = container[0].pos
+            this.memory.container = {
+                pos: container[0].pos,
+                id: container[0].id as Id<StructureContainer>
+            }
         } else {
             this.memory.container = undefined
         }
