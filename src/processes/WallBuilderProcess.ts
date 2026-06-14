@@ -22,8 +22,7 @@ export default class WallBuilderProcess extends EnergyCreepProcess<{ scale: numb
             return actResult.SELECTNEW
         }
         //TODO: check if this can be replaced with a capacity check to check for a new one when the creep runs out of energy
-
-        if (creep.store.getUsedCapacity() < creep.store.getCapacity() / 2) {
+        if (creep.store.getFreeCapacity() > creep.store.getUsedCapacity()) {
             return actResult.SELECTNEW
         }
         return actResult.CONTINUE;

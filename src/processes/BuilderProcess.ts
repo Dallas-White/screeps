@@ -60,8 +60,10 @@ export default class BuilderProcess extends CreepProcess<BuilderProcessMemory, B
     }
     selectTarget(): boolean {
         if (this.scannedForTarget) return false;
+        console.log("scanning for target 222")
         this.scannedForTarget = true
         let derilectRamparts = Game.rooms[this.memory.room].find(FIND_MY_STRUCTURES, { filter: (s) => s.structureType == STRUCTURE_RAMPART && s.hits < MIN_RAMPART_HITS })
+        console.log(derilectRamparts)
         if (derilectRamparts.length > 0) {
             this.memory.target = derilectRamparts[0].id as Id<StructureRampart>
             return true
@@ -128,12 +130,19 @@ export default class BuilderProcess extends CreepProcess<BuilderProcessMemory, B
             if (targetObj instanceof StructureRampart) {
                 let repairResult = c.repair(targetObj)
                 if (repairResult == ERR_NOT_IN_RANGE) {
-                    c.moveTo(targetObj)
+                    c.moveTo(targetObj, { maxRooms: 1 })
                 } else if (repairResult != OK) {
-                    this.selectTarget()
+                    if (!this.selectTarget()) {
+                        this.shutdown()
+                        return
+                    }
                 }
-                if (targetObj.hits > RAMPART_DECAY_AMOUNT * 4) {
-                    this.selectTarget()
+                if (targetObj.hits > MIN_RAMPART_HITS) {
+
+                    if (!this.selectTarget()) {
+                        this.shutdown()
+                        return
+                    }
                 }
             } else {
                 let buildResult = c.build(targetObj as ConstructionSite)

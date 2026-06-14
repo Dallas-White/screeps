@@ -33,7 +33,6 @@ interface RoomManagerMemory {
     room: string;
     spawnQueue: SpawnRequest<any>[];
     spawnTick: number;
-    parkingMatrix: number[];
     towers: Record<Id<StructureTower>, Pid<TowerProcess>>;
     wallBuilderProcess: Pid<WallBuilderProcess> | undefined;
     repairerProcess: Pid<RepairerProcess> | undefined;
@@ -61,7 +60,6 @@ class RoomManagerProcess extends Process<RoomManagerMemory> implements SpawnMana
             room: r.name,
             spawnQueue: [],
             spawnTick: Game.time,
-            parkingMatrix: [],
             towers: {},
             wallBuilderProcess: undefined,
             repairerProcess: undefined,
@@ -126,7 +124,7 @@ class RoomManagerProcess extends Process<RoomManagerMemory> implements SpawnMana
         let pmStructures = Game.rooms[this.memory.room].find(FIND_STRUCTURES).map(s => s.pos);
         let sources = Game.rooms[this.memory.room].find(FIND_SOURCES).map(s => s.pos);
         let exits = Game.rooms[this.memory.room].find(FIND_EXIT);
-        this.memory.parkingMatrix = floodFill([...pmStructures, ...sources, ...exits], this.memory.room)
+        global.parkingMaps[this.memory.room] = floodFill([...pmStructures, ...sources, ...exits], this.memory.room)
 
         let structures = pos.lookFor(LOOK_STRUCTURES).filter((s) => s.structureType == type)
         if (structures.length == 0) return;
@@ -196,7 +194,7 @@ class RoomManagerProcess extends Process<RoomManagerMemory> implements SpawnMana
         var pos = c.pos
         for (var dx = -1; dx <= 1; dx++) {
             for (var dy = -1; dy <= 1; dy++) {
-                if (pos.x + dx < 50 && pos.x + dx >= 0 && pos.y + dy < 50 && pos.y + dy >= 0 && this.memory.parkingMatrix[pos.x + dx + (pos.y + dy) * 50] > this.memory.parkingMatrix[pos.x + pos.y * 50]) {
+                if (pos.x + dx < 50 && pos.x + dx >= 0 && pos.y + dy < 50 && pos.y + dy >= 0 && global.parkingMaps[this.memory.room][pos.x + dx + (pos.y + dy) * 50] > global.parkingMaps[this.memory.room][pos.x + pos.y * 50]) {
                     c.moveTo(pos.x + dx, pos.y + dy);
                     return true;
                 }
@@ -215,6 +213,13 @@ class RoomManagerProcess extends Process<RoomManagerMemory> implements SpawnMana
     }
 
     run(): void {
+        if (!global.parkingMaps[this.memory.room]) {
+
+            let pmStructures = Game.rooms[this.memory.room].find(FIND_STRUCTURES).map(s => s.pos);
+            let sources = Game.rooms[this.memory.room].find(FIND_SOURCES).map(s => s.pos);
+            let exits = Game.rooms[this.memory.room].find(FIND_EXIT);
+            global.parkingMaps[this.memory.room] = floodFill([...pmStructures, ...sources, ...exits], this.memory.room)
+        }
         if (this.memory.needsRefillScan) {
             this.scanForRefills()
             this.memory.needsRefillScan = false

@@ -5,6 +5,7 @@ import AttackCreepProcess from "processes/combat/AttackCreepProcess";
 import HealingProcess from "processes/combat/HealingProcess";
 import RemoteMiner from "processes/RemoteMiner";
 import { ErrorMapper } from "utils/ErrorMapper";
+import FlowMap from "utils/flowMap";
 
 declare global {
   /*
@@ -40,6 +41,7 @@ declare global {
   // Syntax for adding proprties to `global` 
   namespace NodeJS {
     interface Global {
+      parkingMaps: Record<string, FlowMap>
     }
   }
 
