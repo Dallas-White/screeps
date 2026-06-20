@@ -41,6 +41,7 @@ declare global {
   namespace NodeJS {
     interface Global {
       parkingMaps: Record<string, number[]>
+      initialized: boolean
     }
   }
 
@@ -153,12 +154,17 @@ export const loop = ErrorMapper.wrapLoop(() => {
     }
 
 
+
     profilingData.sort((a, b) => b.usage - a.usage)
     console.log("------------PROFILING DATA-----------------")
     for (let proc of profilingData) {
       console.log(proc.name + ": " + proc.usage)
     }
     console.log("------------END PROFILING DATA-----------------")
+  }
+  if (!global.initialized) {
+    global.parkingMaps = {}
+    global.initialized = true
   }
   // Automatically delete memory of missing creeps
   for (const name in Memory.creeps) {

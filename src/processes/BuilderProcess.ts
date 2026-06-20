@@ -7,7 +7,7 @@ import { max } from "lodash";
 import { gatherEnergy, moveToRoom } from "utils/creepUtils";
 import { SpawnManager } from "SpawnManager";
 
-const CONSTRUCTION_SITE_PRIORITES: Array<StructureConstant> = [STRUCTURE_SPAWN, STRUCTURE_WALL, STRUCTURE_RAMPART, STRUCTURE_EXTENSION, STRUCTURE_CONTAINER]
+const CONSTRUCTION_SITE_PRIORITES: Array<StructureConstant> = [STRUCTURE_SPAWN, STRUCTURE_WALL, STRUCTURE_RAMPART, STRUCTURE_TOWER, STRUCTURE_EXTENSION, STRUCTURE_CONTAINER]
 const MIN_RAMPART_HITS = (RAMPART_DECAY_AMOUNT / RAMPART_DECAY_TIME) * 2000
 
 
@@ -88,8 +88,9 @@ export default class BuilderProcess extends CreepProcess<BuilderProcessMemory, B
     }
 
     runCreep(c: Creep, creepMemory: BuilderCreepMemory): void {
-        if (c.room.name != this.memory.room) {
+        if (c.room.name != this.memory.room || c.pos.x == 49 || c.pos.y == 49 || c.pos.y == 0 || c.pos.x == 0) {
             moveToRoom(c, this.memory.room)
+            return
         }
         if (!creepMemory.state) {
             creepMemory.state = BuilderCreepState.FETCHING
@@ -137,7 +138,7 @@ export default class BuilderProcess extends CreepProcess<BuilderProcessMemory, B
                         return
                     }
                 }
-                if (targetObj.hits > MIN_RAMPART_HITS) {
+                if (targetObj.hits > MIN_RAMPART_HITS * 2) {
 
                     if (!this.selectTarget()) {
                         this.shutdown()

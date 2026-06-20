@@ -1,24 +1,23 @@
 export function moveToRoom(creep: Creep, roomName: string) {
     if (creep.room.name == roomName) {
         creep.moveTo(25, 25)
+        return;
     }
     if (!roomName) throw new Error("Invalid Room")
     if (!creep.memory.roomPath || creep.memory.roomPath.destination != roomName || creep.memory.roomPath.path.length == 0) {
         let path = Game.map.findRoute(creep.room.name, roomName, {
-            routeCallback(roomName) {
-                let parsed = /^[WE]([0-9]+)[NS]([0-9]+)$/.exec(roomName)!;
+            routeCallback: (callbackRoom) => {
+                let parsed = /^[WE]([0-9]+)[NS]([0-9]+)$/.exec(callbackRoom)!;
                 let isHighway = (+parsed[1] % 10 === 0) ||
                     (+parsed[2] % 10 === 0);
-                let isMyRoom = Game.rooms[roomName] &&
-                    Game.rooms[roomName].controller &&
-                    Game.rooms[roomName].controller?.my;
+                let isMyRoom = Game.rooms[callbackRoom] &&
+                    Game.rooms[callbackRoom].controller &&
+                    Game.rooms[callbackRoom].controller?.my;
                 let isSourceKeeper = (+parsed[2] % 10 > 3 && +parsed[2] % 10 < 7) && (+parsed[1] % 10 > 3 && +parsed[1] % 10 < 7)
                 if (isHighway || isMyRoom) {
                     return 1;
-                } else if (isSourceKeeper) {
-                    return 20
                 } else {
-                    return 10;
+                    return 200;
                 }
             }
         })

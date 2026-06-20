@@ -110,7 +110,7 @@ export default class HarvesterProcess extends CreepProcess<HarvesterProcessMemor
             c.moveTo(src)
         }
         if (mineResult == OK) {
-            if (this.memory.link) c.transfer(Game.getObjectById(this.memory.link) as StructureLink, RESOURCE_ENERGY)
+            if (this.memory.link && c.store.getFreeCapacity() < c.getActiveBodyparts(WORK) * HARVEST_POWER) c.transfer(Game.getObjectById(this.memory.link) as StructureLink, RESOURCE_ENERGY)
             this.memory.minedEnergy = this.memory.minedEnergy * (1 - ENERGY_MINING_ALPHA) + (HARVEST_POWER * c.body.filter((p) => p.type == WORK).length) * ENERGY_MINING_ALPHA
         } else {
             this.memory.minedEnergy *= (1 - ENERGY_MINING_ALPHA)

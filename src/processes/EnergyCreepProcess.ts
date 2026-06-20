@@ -54,6 +54,9 @@ abstract class EnergyCreepProcess<P> extends CreepProcess<P & EnergyCreepProcess
 
     abstract killOnNoTarget(): boolean;
 
+    reselectOnEmpyt(): boolean {
+        return false
+    }
 
     abstract selectTarget(pos: RoomPosition): _HasId | null
 

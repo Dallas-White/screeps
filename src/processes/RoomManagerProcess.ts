@@ -118,6 +118,7 @@ class RoomManagerProcess extends Process<RoomManagerMemory> implements SpawnMana
 
 
     onConstructionFinished(type: StructureConstant, pos: RoomPosition): void {
+        console.log("construction finished")
         let pmStructures = Game.rooms[this.memory.room].find(FIND_STRUCTURES).map(s => s.pos);
         let sources = Game.rooms[this.memory.room].find(FIND_SOURCES).map(s => s.pos);
         let exits = Game.rooms[this.memory.room].find(FIND_EXIT);
