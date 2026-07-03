@@ -27,7 +27,7 @@ declare global {
     pid_counter: number,
     profilingData: { [processName: string]: { lastRan: number, averageCPU: number } }
     attacks: { [roomName: string]: Attack }
-
+    terminaltaskIDCounter: number
   }
   interface FlagMemory {
     pid: Pid<Process> | undefined

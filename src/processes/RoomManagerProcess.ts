@@ -18,6 +18,7 @@ import LinkManager from "./LinkManager";
 import floodFill from "utils/floodfill";
 import { SpawnCallback, SpawnManager } from "SpawnManager";
 import { CarrierJobFinishedCallback, LogisticsManager } from "./LogisticsManager";
+import { TerminalManager, TerminalTask, TerminalTaskCallback, TerminalTaskID, TerminalTaskType } from "./structureManagement/TerminalManager";
 
 const SPAWN_EMA_ALPHA = 0.05
 
@@ -32,6 +33,7 @@ interface RoomManagerMemory {
     room: string;
     spawnQueue: SpawnRequest<any>[];
     spawnTick: number;
+    terminalClearTask: TerminalTaskID | undefined
     towers: Record<Id<StructureTower>, Pid<TowerProcess>>;
     wallBuilderProcess: Pid<WallBuilderProcess> | undefined;
     repairerProcess: Pid<RepairerProcess> | undefined;
@@ -49,10 +51,11 @@ interface RoomManagerMemory {
     defender: Pid<AttackCreepProcess> | undefined;
     healer: Pid<HealingProcess> | undefined;
     refillRequests: Record<Id<AnyStoreStructure>, LogisticsTaskID>
-    needsRefillScan: boolean
+    needsRefillScan: boolean,
+    terminalManager: Pid<TerminalManager> | undefined
 
 }
-class RoomManagerProcess extends Process<RoomManagerMemory> implements SpawnManager, ConstructionFinishedCallback, CarrierJobFinishedCallback {
+class RoomManagerProcess extends Process<RoomManagerMemory> implements SpawnManager, ConstructionFinishedCallback, CarrierJobFinishedCallback, TerminalTaskCallback {
     constructor(r: Room, kernel: Kernel, parent: Process) {
         super(kernel, parent, {
             room: r.name,
@@ -72,13 +75,18 @@ class RoomManagerProcess extends Process<RoomManagerMemory> implements SpawnMana
             defender: undefined,
             healer: undefined,
             refillRequests: {},
-            needsRefillScan: true
+            needsRefillScan: true,
+            terminalClearTask: undefined,
+            terminalManager: undefined
         });
 
     }
+    onTaskDone(t: TerminalTask, id: TerminalTaskID): void {
+        this.memory.terminalClearTask = undefined
+    }
 
-    onCarrierJobFinished(id: LogisticsTask): void {
-        delete this.memory.refillRequests[id.dest!]
+    onCarrierJobFinished(task: LogisticsTask): void {
+        delete this.memory.refillRequests[task.dest!]
     }
 
     getLogisticsManager(): LogisticsManager {
@@ -86,7 +94,6 @@ class RoomManagerProcess extends Process<RoomManagerMemory> implements SpawnMana
     }
 
     scanForRefills() {
-        console.log("REFILL SCANNING")
         let structuresNeedingEnergy = Game.rooms[this.memory.room].find(FIND_MY_STRUCTURES, { filter: (s) => (s.structureType == STRUCTURE_SPAWN || s.structureType == STRUCTURE_EXTENSION) && s.store.getFreeCapacity(RESOURCE_ENERGY) > 0 }) as AnyStoreStructure[]
         for (let x of structuresNeedingEnergy) {
             if (this.memory.refillRequests[x.id]) {
@@ -95,7 +102,7 @@ class RoomManagerProcess extends Process<RoomManagerMemory> implements SpawnMana
                 } catch {
                     delete this.memory.refillRequests[x.id]
                     this.memory.refillRequests[x.id] = this.getLogisticsManager().addLogisticTask({
-                        priority: 100,
+                        priority: 500,
                         amount: x.store.getFreeCapacity(RESOURCE_ENERGY),
                         source: undefined,
                         dest: x.id,
@@ -105,7 +112,7 @@ class RoomManagerProcess extends Process<RoomManagerMemory> implements SpawnMana
                 }
             } else {
                 this.memory.refillRequests[x.id] = this.getLogisticsManager().addLogisticTask({
-                    priority: 100,
+                    priority: 500,
                     amount: x.store.getFreeCapacity(RESOURCE_ENERGY),
                     source: undefined,
                     dest: x.id,
@@ -118,7 +125,6 @@ class RoomManagerProcess extends Process<RoomManagerMemory> implements SpawnMana
 
 
     onConstructionFinished(type: StructureConstant, pos: RoomPosition): void {
-        console.log("construction finished")
         let pmStructures = Game.rooms[this.memory.room].find(FIND_STRUCTURES).map(s => s.pos);
         let sources = Game.rooms[this.memory.room].find(FIND_SOURCES).map(s => s.pos);
         let exits = Game.rooms[this.memory.room].find(FIND_EXIT);
@@ -127,8 +133,10 @@ class RoomManagerProcess extends Process<RoomManagerMemory> implements SpawnMana
         let structures = pos.lookFor(LOOK_STRUCTURES).filter((s) => s.structureType == type)
         if (structures.length == 0) return;
         let structure = structures[0];
-        console.log(structure.id)
-        if (structure.structureType == STRUCTURE_TOWER) {
+        if (structure.structureType == STRUCTURE_TERMINAL) {
+            let terminalManager = new TerminalManager(this.kernel, this, structure)
+            this.memory.terminalManager = this.kernel.addProcess(terminalManager)
+        } else if (structure.structureType == STRUCTURE_TOWER) {
             if (!this.memory.towers) {
                 this.memory.towers = {}
             }
@@ -199,6 +207,13 @@ class RoomManagerProcess extends Process<RoomManagerMemory> implements SpawnMana
     }
 
     run(): void {
+        if (!this.memory.terminalManager) {
+            let terminal = Game.rooms[this.memory.room].terminal
+            if (terminal) {
+                this.memory.terminalManager = this.kernel.addProcess(new TerminalManager(this.kernel, this, terminal))
+
+            }
+        }
         if (!global.parkingMaps[this.memory.room]) {
 
             let pmStructures = Game.rooms[this.memory.room].find(FIND_STRUCTURES).map(s => s.pos);
@@ -338,6 +353,15 @@ class RoomManagerProcess extends Process<RoomManagerMemory> implements SpawnMana
 
             this.kernel.getProcess(this.memory.healer!)?.shutdown()
             this.memory.healer = undefined
+        }
+
+        if (this.memory.terminalManager != undefined && !this.memory.terminalClearTask && (Game.rooms[this.memory.room].storage?.store[RESOURCE_ENERGY] || 0) > 500000) {
+            this.memory.terminalClearTask = this.kernel.getProcess(this.memory.terminalManager!)?.addTask({
+                taskType: TerminalTaskType.SELL,
+                resource: "energy",
+                amount: 100000,
+                priority: 100
+            }, this.getPID(), 500)
         }
     }
 

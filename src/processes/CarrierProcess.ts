@@ -70,26 +70,9 @@ export default class CarrierProcess extends CreepProcess<CarrierProcessMemory, C
     runCreep(c: Creep, creepMemory: CarrierCreepMemory): void {
         if (!creepMemory.assignment) {
             if (c.store.getUsedCapacity() != 0) {
-                let dest: AnyStoreStructure;
-                if (c.room.storage && c.room.storage.store.getFreeCapacity() >= c.store.getUsedCapacity()) {
-                    dest = c.room.storage
-                } else {
-                    let containers = c.room.find(FIND_STRUCTURES, { filter: (s) => s.structureType == STRUCTURE_CONTAINER && s.store.getFreeCapacity() >= c.store.getUsedCapacity() })
-                    if (containers.length == 0) {
-                        for (let x of RESOURCES_ALL) {
-                            if (c.store.getUsedCapacity(x) > 0) {
-                                c.drop(x)
-                                return
-                            }
-                        }
-                    }
-                    dest = c.pos.findClosestByRange(containers) as AnyStoreStructure
-                }
                 for (let x of RESOURCES_ALL) {
                     if (c.store.getUsedCapacity(x) > 0) {
-                        if (c.transfer(dest, x) == ERR_NOT_IN_RANGE) {
-                            c.moveTo(dest)
-                        }
+                        c.drop(x)
                         return
                     }
                 }
@@ -175,7 +158,7 @@ export default class CarrierProcess extends CreepProcess<CarrierProcessMemory, C
             } else if (c.room.storage && c.room.storage.store.getFreeCapacity() >= creepMemory.assignment.dest[0].amount) {
                 dest = c.room.storage
             } else {
-                let containers = c.room.find(FIND_STRUCTURES, { filter: (s) => (s.structureType == STRUCTURE_CONTAINER || s.structureType == STRUCTURE_LINK) && !s.isSourceStructure && creepMemory.assignment!.dest[0].amount >= (s.store.getFreeCapacity(creepMemory.assignment!.dest[0].resource) ?? 0) })
+                let containers = c.room.find(FIND_STRUCTURES, { filter: (s) => (s.structureType == STRUCTURE_LINK) && !s.isSourceStructure && creepMemory.assignment!.dest[0].amount >= (s.store.getFreeCapacity(creepMemory.assignment!.dest[0].resource) ?? 0) })
                 if (containers.length == 0) {
                     for (let x of creepMemory.assignment.source) {
                         this.kernel.getProcess(this.memory.logisticsManager)?.returnAssignment(x);

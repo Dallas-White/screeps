@@ -8,7 +8,7 @@ import CarrierProcess from "./CarrierProcess";
 
 
 export interface CarrierJobFinishedCallback extends Process {
-    onCarrierJobFinished(id: LogisticsTask): void
+    onCarrierJobFinished(task: LogisticsTask, id: LogisticsTaskID): void
 }
 
 export interface LogisticsEndpoint {
@@ -98,7 +98,7 @@ export class LogisticsManager extends Process<LogisticsManagerMemory> implements
             done: 0
         }
         this.memory.logisticsTasks.push(task);
-        this.memory.logisticsTasks.sort((a: StoredLogisticsTask, b: StoredLogisticsTask) => a.task.priority - b.task.priority);
+        this.memory.logisticsTasks.sort((a: StoredLogisticsTask, b: StoredLogisticsTask) => b.task.priority - a.task.priority);
         return id as LogisticsTaskID;
     }
 
@@ -182,7 +182,7 @@ export class LogisticsManager extends Process<LogisticsManagerMemory> implements
         this.memory.logisticsTasks[taskIdx].done += assignment.amount
         if (this.memory.logisticsTasks[taskIdx].task.amount - this.memory.logisticsTasks[taskIdx].done <= 0) {
             if (this.memory.logisticsTasks[taskIdx].task.callback != undefined) {
-                this.kernel.getProcess(this.memory.logisticsTasks[taskIdx].task.callback!)!.onCarrierJobFinished(this.memory.logisticsTasks[taskIdx].task)
+                this.kernel.getProcess(this.memory.logisticsTasks[taskIdx].task.callback!)!.onCarrierJobFinished(this.memory.logisticsTasks[taskIdx].task, this.memory.logisticsTasks[taskIdx].id)
             }
             this.memory.logisticsTasks.splice(taskIdx, 1)
         }
@@ -208,7 +208,7 @@ export class LogisticsManager extends Process<LogisticsManagerMemory> implements
         if (Game.time % 1000 == 0) {
             if (this.memory.queueEMA > 5) {
                 this.memory.scale += 1
-                this.memory.scale = Math.min(6, this.memory.scale)
+                this.memory.scale = Math.min(10, this.memory.scale)
             } else if (this.memory.queueEMA < 0.1) {
                 this.memory.scale -= 1
                 this.memory.scale = Math.max(2, this.memory.scale)
