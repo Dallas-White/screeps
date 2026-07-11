@@ -205,16 +205,30 @@ export class LogisticsManager extends Process<LogisticsManagerMemory> implements
         }
         let queueSize = _.sum(this.memory.logisticsTasks.map((x) => x.task.amount - x.claimed - x.done))
         this.memory.queueEMA = this.memory.queueEMA * 0.8 + queueSize * 0.2
-        if (Game.time % 1000 == 0) {
-            if (this.memory.queueEMA > 5) {
-                this.memory.scale += 1
-                this.memory.scale = Math.min(10, this.memory.scale)
-            } else if (this.memory.queueEMA < 0.1) {
-                this.memory.scale -= 1
-                this.memory.scale = Math.max(2, this.memory.scale)
-            }
-            for (let x of this.memory.carriers) {
-                this.kernel.getProcess(x)!.setScale(Math.ceil(this.memory.scale / 2))
+
+        if (Game.time % 5000 == 0) {
+            let totalUtilization = _.sum(this.memory.carriers.map((c) => this.kernel.getProcess(c)?.getTotalUtilizationTicks()))
+            if (totalUtilization > 8000) {
+                let ute = this.memory.carriers.map((c) => this.kernel.getProcess(c)?.getUtilization())
+                let sum = 0
+                for (let z of ute) {
+                    sum += z || 0
+                }
+                let utilization = sum / ute.length;
+                if (utilization > 0.9) {
+                    this.memory.scale += 1
+                } else if (utilization < 0.5) {
+                    this.memory.scale -= 1
+                }
+                for (let x in this.memory.carriers) {
+                    let proc = this.kernel.getProcess(this.memory.carriers[x])
+                    proc?.resetUtilization()
+                    let newScale = this.memory.scale / this.memory.carriers.length;
+                    newScale = Number(x) == 0 ? Math.floor(newScale) : Math.ceil(newScale);
+                    proc?.setScale(Math.floor(this.memory.scale))
+                }
+                this.memory.scale = Math.max(this.memory.scale, 2)
+                this.memory.scale = Math.min(this.memory.scale, 10)
             }
         }
     }

@@ -18,6 +18,7 @@ interface HarvesterProcessMemory {
     container: RoomPosition | undefined
     containerID: Id<StructureContainer> | undefined
     pushRequest: LogisticsTaskID | undefined
+    room: string
 }
 export default class HarvesterProcess extends CreepProcess<HarvesterProcessMemory, {}> implements EnergyProducer, CarrierJobFinishedCallback {
 
@@ -45,7 +46,7 @@ export default class HarvesterProcess extends CreepProcess<HarvesterProcessMemor
     }
 
     getSpawningPriority(): number {
-        return 200
+        return 900
     }
     constructor(kernel: Kernel, parent: Process, spawnManager: SpawnManager, source: Source) {
         super(kernel, parent, spawnManager, {
@@ -56,7 +57,8 @@ export default class HarvesterProcess extends CreepProcess<HarvesterProcessMemor
             miningTimer: 0,
             container: undefined,
             containerID: undefined,
-            pushRequest: undefined
+            pushRequest: undefined,
+            room: source.room.name
         });
         this.findAdjacentContainers()
         this.resetEnergyProduction()
@@ -88,15 +90,19 @@ export default class HarvesterProcess extends CreepProcess<HarvesterProcessMemor
         if ((!this.memory.containerID || !this.memory.link) && Game.time % 1000 == 0) {
             this.findAdjacentContainers()
         }
-        if (src.room.name != c.room.name) {
-            moveToRoom(c, src.room.name)
+        if (this.memory.room && this.memory.room != c.room.name) {
+            moveToRoom(c, this.memory.room)
+            return
+        } else if (!this.memory.room && src) {
+            this.memory.room = src.room.name
+        } else if (!src) {
             return
         }
         if (this.memory.containerID) {
             let container = Game.getObjectById(this.memory.containerID)
-            if (container && container.store.getFreeCapacity() < 500) {
+            if (container && container.store.getFreeCapacity() < 500 && this.memory.room) {
                 if (!this.memory.pushRequest) {
-                    this.memory.pushRequest = this.kernel.getProcess((this.memory.spawnManager) as Pid<RoomManagerProcess>)?.getLogisticsManager().addLogisticTask({ source: this.memory.containerID, resource: RESOURCE_ENERGY, amount: 1500, callback: this.getPID(), dest: undefined, priority: 500 })
+                    this.memory.pushRequest = this.kernel.getProcess((this.memory.spawnManager) as Pid<RoomManagerProcess>)?.getLogisticsManager().addLogisticTask({ source: this.memory.containerID, resource: RESOURCE_ENERGY, amount: 1500, callback: this.getPID(), dest: undefined, priority: 250 })
                 } else {
                     this.kernel.getProcess((this.memory.spawnManager) as Pid<RoomManagerProcess>)?.getLogisticsManager().resizeTask(this.memory.pushRequest, 1500)
                 }

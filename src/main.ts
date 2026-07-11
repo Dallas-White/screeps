@@ -28,6 +28,7 @@ declare global {
     profilingData: { [processName: string]: { lastRan: number, averageCPU: number } }
     attacks: { [roomName: string]: Attack }
     terminaltaskIDCounter: number
+    room_intel: Record<string, RoomIntel>
   }
   interface FlagMemory {
     pid: Pid<Process> | undefined
@@ -75,6 +76,7 @@ declare global {
   function attack(roomName: string, attack: number, heal: number): void
   function stopAttack(roomName: string): void
   function remoteMine(parentRoom: string, childRoom: string): void
+  function killProcess(pid: number): void
 
 
 }
@@ -114,7 +116,12 @@ export const loop = ErrorMapper.wrapLoop(() => {
     kernel.addProcess(new RemoteMiner(kernel, parentRoomManager, parentRoom, childRoom))
     kernel.serializeProcesses()
   }
-
+  global.killProcess = function (pid: number) {
+    let kernel = new Kernel();
+    kernel.deserializeProcesses();
+    kernel.killProcess(pid as Pid)
+    kernel.serializeProcesses()
+  }
   global.attack = function (roomName: string, attack: number, heal: number) {
     let kernel = new Kernel();
     kernel.deserializeProcesses()

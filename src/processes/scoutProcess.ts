@@ -2,7 +2,7 @@ import { moveToRoom } from "utils/creepUtils";
 import CreepProcess from "./CreepProcess";
 import { ProcessRegistry } from "Process";
 
-export default class ScoutProcess extends CreepProcess<{ room: string }> {
+export default class ScoutProcess extends CreepProcess<{ nextExit: RoomPosition, nextRoom: string | undefined }> {
     initCreepMemory(): {} {
         return {}
     }
@@ -15,12 +15,25 @@ export default class ScoutProcess extends CreepProcess<{ room: string }> {
         this.memory.room = roomName
     }
 
-    runCreep(c: Creep): void {
-        if (c.room.name != this.memory.room) {
-            moveToRoom(c, this.memory.room)
-        } else if (c.pos.x == 49 || c.pos.y == 49 || c.pos.y == 0 || c.pos.y == 49) {
-            c.moveTo(25, 25)
+    runCreep(c: Creep, creepMemory: { nextExit: RoomPosition, nextRoom: string | undefined }): void {
+        if (c.room.name == creepMemory.nextRoom || !creepMemory.nextRoom) {
+            let exits = Game.map.describeExits(c.room.name)!
+            let leastRecentlyScoutedRoom = undefined
+            let leastRecentlyScoutedExit: FindConstant = FIND_EXIT_TOP
+            let leastRecentlyScoutedTime = 0
+            for (let entry in Object.entries(exits)) {
+                const [exit, room] = entry
+                if ((Memory.room_intel[room]?.lastScouted || -1) <= leastRecentlyScoutedTime || leastRecentlyScoutedRoom == undefined) {
+                    leastRecentlyScoutedRoom = room
+                    leastRecentlyScoutedExit = Number(exit) as FindConstant
+                    leastRecentlyScoutedTime = Memory.room_intel[room]?.lastScouted || 0
+                }
+            }
+            let nextExit = c.pos.findClosestByRange(c.room.find(leastRecentlyScoutedExit) as RoomPosition[])
+            creepMemory.nextRoom = leastRecentlyScoutedRoom
+            creepMemory.nextExit = nextExit!
         }
+        c.moveTo(creepMemory.nextExit)
     }
     onCreepDeath(): void { }
     generateSpawnRequest(): [ratio: BodyPartConstant[], targetScale: number, baseparts: (BodyPartConstant[] | undefined), maxCreeps: (number | undefined)] {

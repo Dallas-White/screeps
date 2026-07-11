@@ -62,11 +62,10 @@ abstract class EnergyCreepProcess<P> extends CreepProcess<P & EnergyCreepProcess
 
 
     runCreep(creep: Creep, creepMemory: EnergyCreepMemory): void {
-        if (!this.memory.room) this.memory.room = (this.getParent() as RoomManagerProcess).getRoomName()
-        if (creep.room.name != this.memory.room && !creepMemory.__roomTraveledTo) {
+        if ((creep.room.name != this.memory.room || creep.pos.x >= 49 || creep.pos.y >= 49 || creep.pos.x <= 0 || creep.pos.y <= 0) && !creepMemory.__roomTraveledTo) {
             moveToRoom(creep, this.memory.room)
             return
-        } else {
+        } else if (!creepMemory.__roomTraveledTo && creep.room.name == this.memory.room) {
             creepMemory.__roomTraveledTo = true
         }
         if (creepMemory.__ecState == ECState.ACTING) {

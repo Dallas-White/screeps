@@ -1,12 +1,10 @@
 import Process, { ProcessRegistry } from "Process";
 import { EnergyConsumer, EnergyProducer } from "utils/EnergyBalance";
 import Reserver from "./Reserver";
-import ScoutProcess from "./scoutProcess";
 import BuilderProcess from "./BuilderProcess";
 import Kernel from "Kernel";
 import HarvesterProcess from "./HarvesterProcess";
 import RepairerProcess from "./RepairerProcess";
-import Hauler from "./Hauler";
 import AttackCreepProcess from "./combat/AttackCreepProcess";
 import PillagerProcess from "./combat/PillagerProecss";
 import { SpawnManager } from "SpawnManager";

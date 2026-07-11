@@ -127,7 +127,7 @@ abstract class CreepProcess<P, C extends Object = {}> extends Process<P & CreepP
             this.memory.__spawningRatio = 0
         }
         if (this.memory.__spawningRatio && this.memory.__spawningRatio > 0) aliveRatio += this.memory.__spawningRatio;
-        if (aliveRatio < targetScale && (!maxCreeps || maxCreeps > this.memory.__creeps.length)) {
+        if (aliveRatio < targetScale && (maxCreeps == undefined || maxCreeps > this.memory.__creeps.length)) {
             let maxEnergyPerCreep = (this.kernel.getProcess(this.memory.spawnManager)! as unknown as SpawnManager).getMaxEnergy()
             let creepBodys = this.generateNeededCreeps(baseparts ? baseparts : [], ratio, targetScale, aliveRatio, maxEnergyPerCreep, maxCreeps ? (maxCreeps - this.memory.__creeps.length) : undefined)
 
@@ -179,6 +179,9 @@ abstract class CreepProcess<P, C extends Object = {}> extends Process<P & CreepP
     }
 
     generateNeededCreeps(baseparts: BodyPartConstant[], ratio: BodyPartConstant[], targetScale: number, currentScale: number, maxEnergy: number, maxNewCreeps: number | undefined): [BodyPartConstant[], number][] {
+        if (maxNewCreeps == 0) {
+            return []
+        }
         let ratioCost = _.sum(_.map(ratio, (part) => BODYPART_COST[part]))
         let baseCost = _.sum(_.map(baseparts, (part) => BODYPART_COST[part]))
         let creeps: [BodyPartConstant[], number][] = []
