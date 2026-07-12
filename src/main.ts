@@ -4,6 +4,8 @@ import Process from "Process";
 import AttackCreepProcess from "processes/combat/AttackCreepProcess";
 import HealingProcess from "processes/combat/HealingProcess";
 import RemoteMiner from "processes/RemoteMiner";
+import "processes/combat/ControllerAttacker"
+import { SpawnManager } from "SpawnManager";
 import { ErrorMapper } from "utils/ErrorMapper";
 
 declare global {
@@ -122,17 +124,21 @@ export const loop = ErrorMapper.wrapLoop(() => {
     kernel.killProcess(pid as Pid)
     kernel.serializeProcesses()
   }
-  global.attack = function (roomName: string, attack: number, heal: number) {
+  global.attack = function (roomName: string, attack: number, heal: number, sourceRoom: string | undefined = undefined) {
     let kernel = new Kernel();
     kernel.deserializeProcesses()
+    let sourceProcess = 0 as Pid<SpawnManager>
+    if (sourceRoom) {
+      sourceProcess = kernel.getProcess(0 as Pid<init>)?.getRoomManager(sourceRoom)!
+    }
     if (!Memory.attacks) Memory.attacks = {}
     if (Memory.attacks[roomName]) {
       (kernel.getProcess(Memory.attacks[roomName].attackProcess) as AttackCreepProcess).setScale(attack);
       (kernel.getProcess(Memory.attacks[roomName].healerProcess) as HealingProcess).setScale(heal)
     } else {
-      let attackProc = new AttackCreepProcess(kernel, kernel.getProcess(0 as Pid<init>)!, kernel.getProcess(0 as Pid<init>)!, attack, [TOUGH, TOUGH, ATTACK, MOVE, MOVE, MOVE], roomName, undefined)
+      let attackProc = new AttackCreepProcess(kernel, kernel.getProcess(sourceProcess)!, kernel.getProcess(sourceProcess)!, attack, [TOUGH, TOUGH, ATTACK, MOVE, MOVE, MOVE], roomName, undefined)
       kernel.addProcess(attackProc)
-      let healerProcess = new HealingProcess(kernel, kernel.getProcess(0 as Pid<init>)!, kernel.getProcess(0 as Pid<init>)!, heal, [TOUGH, TOUGH, HEAL, MOVE, MOVE, MOVE], roomName, undefined)
+      let healerProcess = new HealingProcess(kernel, kernel.getProcess(sourceProcess)!, kernel.getProcess(sourceProcess)!, heal, [TOUGH, TOUGH, HEAL, MOVE, MOVE, MOVE], roomName, undefined)
       kernel.addProcess(healerProcess)
       Memory.attacks[roomName] = { attackProcess: attackProc.getPID(), healerProcess: healerProcess.getPID() }
     }

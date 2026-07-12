@@ -42,14 +42,15 @@ export default class LinkManager extends Process<LinkManagerMemory> implements C
     }
 
     run(): void {
-        if (!this.memory.links || this.memory.links.storageLink || Game.time % 1000 == 0) {
+        if (!this.memory.links || !this.memory.links.storageLink || Game.time % 1000 == 0) {
             this.linkScan()
         }
         let freeNonSourceLinks: StructureLink[] = (this.memory.links.nonSourceLinks.map((s: Id<StructureLink>) => Game.getObjectById(s)) as StructureLink[]).sort((a: StructureLink, b: StructureLink) => a.store.getUsedCapacity(RESOURCE_ENERGY) - b.store.getUsedCapacity(RESOURCE_ENERGY)).filter((link) => link.store.getFreeCapacity(RESOURCE_ENERGY) > 50)
         let filledSourceLinks: StructureLink[] = (this.memory.links.sourceLinks.map((s: Id<StructureLink>) => Game.getObjectById(s)).filter((s) => (s != null)) as StructureLink[]).filter((link: StructureLink) => link!.store.getUsedCapacity(RESOURCE_ENERGY) > 50)
-        if (freeNonSourceLinks.length == 0) return
-        for (let sourceLink of filledSourceLinks) {
-            sourceLink.transferEnergy(freeNonSourceLinks[0])
+        if (freeNonSourceLinks.length != 0) {
+            for (let sourceLink of filledSourceLinks) {
+                sourceLink.transferEnergy(freeNonSourceLinks[0])
+            }
         }
         if (this.memory.links.storageLink) {
             let storageLink = Game.getObjectById(this.memory.links.storageLink)

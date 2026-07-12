@@ -107,7 +107,7 @@ export default class Kernel {
         for (let child of process!.getChildren()) {
             this.killProcess(child)
         }
-        this.processes.get(process.getParent().getPID()!)?.removeChild(pid)
+        this.processes.get(process.getParent().getPID())?.removeChild(pid)
         this.processes.delete(pid)
 
     }

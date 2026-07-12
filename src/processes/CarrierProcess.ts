@@ -82,11 +82,12 @@ export default class CarrierProcess extends CreepProcess<CarrierProcessMemory, C
         return { assignment: undefined, state: CarrierCreepState.FETCHING }
     }
     getSpawningPriority(): number {
-        return 800
+        return 9999999
     }
     runCreep(c: Creep, creepMemory: CarrierCreepMemory): void {
         this.memory.totalTicks++;
         if (!creepMemory.assignment) {
+            this.memory.freeTicks++;
             if ((c.ticksToLive || 0) < 200) {
                 c.suicide()
                 return
@@ -104,7 +105,6 @@ export default class CarrierProcess extends CreepProcess<CarrierProcessMemory, C
             }
 
             if (!creepMemory.assignment) {
-                this.memory.freeTicks++;
                 return
             }
         }
@@ -117,7 +117,7 @@ export default class CarrierProcess extends CreepProcess<CarrierProcessMemory, C
             if (creepMemory.assignment.source[0].location && Game.getObjectById(creepMemory.assignment.source[0].location)) {
                 source = Game.getObjectById(creepMemory.assignment.source[0].location)!
             } else {
-                let containers = c.room.find(FIND_STRUCTURES, { filter: (s) => (s.structureType == STRUCTURE_CONTAINER || s.structureType == STRUCTURE_LINK || s.structureType == STRUCTURE_STORAGE) && (!creepMemory.assignment?.source[0].amount || s.store[creepMemory.assignment?.source[0].resource] >= creepMemory.assignment?.source[0].amount) })
+                let containers = c.room.find(FIND_STRUCTURES, { filter: (s) => (s.structureType == STRUCTURE_CONTAINER || s.structureType == STRUCTURE_LINK || s.structureType == STRUCTURE_STORAGE) && (!creepMemory.assignment?.source[0].amount || s.store[creepMemory.assignment?.source[0].resource] >= creepMemory.assignment?.source[0].amount) && !creepMemory.assignment?.dest.find((dest) => dest.location == s.id) })
                 if (containers.length == 0) {
                     let dropped_resources = c.room.find(FIND_DROPPED_RESOURCES, { filter: (s) => s.resourceType == creepMemory.assignment?.source[0].resource })
                     if (dropped_resources.length == 0) {

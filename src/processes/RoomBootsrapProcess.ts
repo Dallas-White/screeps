@@ -26,7 +26,7 @@ export class RoomBootstrapProcess extends CreepProcess<RoomBootstrapProcessMemor
     }
 
     getSpawningPriority(): number {
-        return 9999999
+        return 999999999
     }
 
 

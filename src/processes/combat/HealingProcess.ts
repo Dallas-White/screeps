@@ -43,7 +43,7 @@ export default class HealingProcess extends CreepProcess<HealingProcessMemory> {
             return
         }
         let target = c.pos.findClosestByPath(FIND_MY_CREEPS, { filter: (target) => target.hits < target.hitsMax })
-        if (!target) target = c.pos.findClosestByPath(FIND_MY_CREEPS)
+        if (!target) target = c.pos.findClosestByPath(FIND_MY_CREEPS, { filter: (target) => target.name != c.name })
         if (!target) return;
         c.moveTo(target)
         if (target.hits < target.hitsMax) c.heal(target)
