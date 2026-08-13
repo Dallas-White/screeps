@@ -7,7 +7,7 @@ import { forEachRight } from "lodash";
 import { SpawnManager } from "SpawnManager";
 import RoomManagerProcess from "./RoomManagerProcess";
 import { CarrierJobFinishedCallback } from "./LogisticsManager";
-
+import RemoteMiner from "./RemoteMiner";
 const ENERGY_MINING_ALPHA = 0.01
 interface HarvesterProcessMemory {
     source: Id<Source>,
@@ -36,9 +36,9 @@ export default class HarvesterProcess extends CreepProcess<HarvesterProcessMemor
             }
             this.memory.freeSpaces = freeSpaces
         }
-        if (Game.getObjectById(this.memory.source) && (Game.getObjectById(this.memory.source)! as Source).room.energyCapacityAvailable == 0) return [[WORK, MOVE], 6, [], this.memory.freeSpaces]
-        if (this.memory.link) return [[WORK], 6, [MOVE, CARRY], this.memory.freeSpaces]
-        return [[WORK], 6, [MOVE], this.memory.freeSpaces]
+        if (Game.getObjectById(this.memory.source) && (Game.getObjectById(this.memory.source)! as Source).room.energyCapacityAvailable == 0) return [[WORK, MOVE], 6, [], 1]
+        if (this.memory.link) return [[WORK], 12, [MOVE, CARRY], this.memory.freeSpaces]
+        return [[WORK], 12, [MOVE], this.memory.freeSpaces]
     }
 
     initCreepMemory(): {} {
@@ -46,7 +46,7 @@ export default class HarvesterProcess extends CreepProcess<HarvesterProcessMemor
     }
 
     getSpawningPriority(): number {
-        return 900
+        return this.getParent() instanceof RemoteMiner ? 900 : 99999999
     }
     constructor(kernel: Kernel, parent: Process, spawnManager: SpawnManager, source: Source) {
         super(kernel, parent, spawnManager, {
@@ -108,15 +108,19 @@ export default class HarvesterProcess extends CreepProcess<HarvesterProcessMemor
                 }
             }
         }
-        if (this.memory.container && c.pos != new RoomPosition(this.memory.container.x, this.memory.container.y, this.memory.container.roomName) && c.room.lookForAt(LOOK_CREEPS, this.memory.container.x, this.memory.container.y).length == 0) {
+        if (this.memory.container && (c.pos.x != this.memory.container.x || c.pos.y != this.memory.container.y || c.pos.roomName != this.memory.container.roomName)) {
             c.moveTo(new RoomPosition(this.memory.container.x, this.memory.container.y, this.memory.container.roomName))
             this.memory.minedEnergy *= (1 - ENERGY_MINING_ALPHA)
             return
         } else if (mineResult == ERR_NOT_IN_RANGE) {
             c.moveTo(src)
+        } else if (mineResult == ERR_TIRED) {
+            this.sleep(Math.min(c.ticksToLive || 1, src.ticksToRegeneration))
         }
         if (mineResult == OK) {
-            if (this.memory.link && c.store.getFreeCapacity() < c.getActiveBodyparts(WORK) * HARVEST_POWER) c.transfer(Game.getObjectById(this.memory.link) as StructureLink, RESOURCE_ENERGY)
+            if (this.memory.link && c.store.getFreeCapacity() < c.getActiveBodyparts(WORK) * HARVEST_POWER) {
+                c.transfer(Game.getObjectById(this.memory.link) as StructureLink, RESOURCE_ENERGY)
+            }
             this.memory.minedEnergy = this.memory.minedEnergy * (1 - ENERGY_MINING_ALPHA) + (HARVEST_POWER * c.body.filter((p) => p.type == WORK).length) * ENERGY_MINING_ALPHA
         } else {
             this.memory.minedEnergy *= (1 - ENERGY_MINING_ALPHA)

@@ -121,14 +121,15 @@ export default class RemoteMiner extends Process<RemoteMinerMemory> implements E
             }
             if (failed) {
                 this.sleep(1000)
-                return
+            } else {
+                this.memory.planned = true;
+
             }
         }
-        if (!this.memory.built && (!this.memory.builderProc || !this.kernel.getProcess(this.memory.builderProc))) {
+        if (((!this.memory.built) || (Game.time % 10 == 0 && Game.rooms[this.memory.mineRoom].find(FIND_MY_CONSTRUCTION_SITES).length > 0)) && (!this.memory.builderProc || !this.kernel.getProcess(this.memory.builderProc))) {
 
             let constructionProcess = new BuilderProcess(this.kernel, this, this.getParent() as SpawnManager, this.memory.mineRoom)
             this.kernel.addProcess(constructionProcess)
-            this.memory.planned = true;
             this.memory.builderProc = constructionProcess.getPID()
         }
         if (!this.memory.repair) {

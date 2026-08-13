@@ -7,18 +7,17 @@ export function moveToRoom(creep: Creep, roomName: string) {
     if (!creep.memory.roomPath || creep.memory.roomPath.destination != roomName || creep.memory.roomPath.path.length == 0) {
         let path = Game.map.findRoute(creep.room.name, roomName, {
             routeCallback: (callbackRoom) => {
-                let parsed = /^[WE]([0-9]+)[NS]([0-9]+)$/.exec(callbackRoom)!;
-                let isHighway = (+parsed[1] % 10 === 0) ||
-                    (+parsed[2] % 10 === 0);
-                let isMyRoom = Game.rooms[callbackRoom] &&
-                    Game.rooms[callbackRoom].controller &&
-                    Game.rooms[callbackRoom].controller?.my;
-                let isSourceKeeper = (+parsed[2] % 10 > 3 && +parsed[2] % 10 < 7) && (+parsed[1] % 10 > 3 && +parsed[1] % 10 < 7)
-                if (isHighway || isMyRoom) {
-                    return 1;
-                } else {
-                    return 200;
+                if (!Memory.room_intel[callbackRoom]) {
+                    return 100
                 }
+                let intel = Memory.room_intel[callbackRoom].intel
+                if (intel.roomType == "highway" || intel.roomType == "unownedRoom" || (intel.roomType == "ownedRoom" && Game.rooms[callbackRoom]?.controller?.my) || (intel.roomType == "reservedRoom")) {
+                    return 10
+                }
+                if (intel.roomType == "ownedRoom") {
+                    return Infinity
+                }
+                return 100
             }
         })
         if (path == -2) throw new Error("Attempt to path to inaccessible room")

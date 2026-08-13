@@ -34,14 +34,6 @@ export default class Kernel {
         for (let pid of this.processes.keys()) {
             let serialized = this.processes.get(pid)!.serialize();
             serialized.children = serialized.children.filter((x) => this.processes.get(x))
-            if (!serialized.parent) {
-                for (let x in Memory.processes) {
-                    if (Memory.processes[x].children.filter((y) => y == pid).length > 0) {
-                        serialized.parent = Memory.processes[x].pid
-                        break
-                    }
-                }
-            }
             Memory.processes[pid] = serialized
         }
         Memory.pid_counter = this.pid_counter
@@ -49,7 +41,7 @@ export default class Kernel {
 
     runProcesses() {
         let cpuLimit = this.getAcceptableCPUUsage();
-        let processList = Array.from(this.processes.values()).sort((a, b) => (a.priority + (Game.time - a.lastRan) - (b.priority + (Game.time - b.lastRan))));
+        let processList = Array.from(this.processes.values()).sort((a, b) => ((a.lastRan) - (b.lastRan)));
         let ProcesssUsed: { [key: string]: number } = {}
         if (!Memory.profilingData) Memory.profilingData = {}
         while (Game.cpu.getUsed() < cpuLimit) {
@@ -75,6 +67,12 @@ export default class Kernel {
             }
             currentProcess.lastRan = Game.time;
         }
+
+        let totalUsage = Game.cpu.getUsed()
+        for (let x of Object.values(ProcesssUsed)) {
+            totalUsage -= x
+        }
+        ProcesssUsed["kernelOverhead"] = totalUsage
         for (let x of Object.keys(ProcesssUsed)) {
             if (!Memory.profilingData[x]) {
                 Memory.profilingData[x] = { averageCPU: ProcesssUsed[x], lastRan: Game.time }

@@ -16,6 +16,7 @@ export interface LogisticsEndpoint {
     id: LogisticsTaskID | undefined,
     resource: ResourceConstant,
     amount: number
+    originalAmount: number
 }
 
 export interface LogisticsAssignment {
@@ -130,7 +131,8 @@ export class LogisticsManager extends Process<LogisticsManagerMemory> implements
 
             if (x.task.source) {
                 let have = Game.getObjectById(x.task.source)?.store[x.task.resource]
-                if (!have || have < assigned) continue
+                if (!have || have === 0) continue
+                if (have < assigned) assigned = have
             }
 
             if (x.task.dest) {
@@ -142,12 +144,12 @@ export class LogisticsManager extends Process<LogisticsManagerMemory> implements
             x.claimed += assigned
             remaining -= assigned
             if (x.task.source) {
-                sources.push({ amount: assigned, location: x.task.source, id: x.task.dest ? undefined : x.id, resource: x.task.resource })
+                sources.push({ amount: assigned, location: x.task.source, id: x.id, resource: x.task.resource, originalAmount: assigned })
             } else {
                 pullAmount[x.task.resource] = (pullAmount[x.task.resource] ?? 0) + assigned
             }
             if (x.task.dest) {
-                destinations.push({ amount: assigned, location: x.task.dest, id: x.id, resource: x.task.resource })
+                destinations.push({ amount: assigned, location: x.task.dest, id: x.id, resource: x.task.resource, originalAmount: assigned })
             } else {
                 pushAmount[x.task.resource] = (pushAmount[x.task.resource] ?? 0) + assigned
             }
@@ -155,12 +157,12 @@ export class LogisticsManager extends Process<LogisticsManagerMemory> implements
         if (sources.length === 0 && Object.keys(pullAmount).length == 0) return undefined
         if (Object.keys(pullAmount).length > 0) {
             for (let x of Object.keys(pullAmount)) {
-                sources.push({ amount: pullAmount[x as ResourceConstant]!, location: undefined, id: undefined, resource: x as ResourceConstant })
+                sources.push({ amount: pullAmount[x as ResourceConstant]!, location: undefined, id: undefined, resource: x as ResourceConstant, originalAmount: pullAmount[x as ResourceConstant]! })
             }
         }
         if (Object.keys(pushAmount).length > 0) {
             for (let x of Object.keys(pushAmount)) {
-                destinations.push({ amount: pushAmount[x as ResourceConstant]!, location: undefined, id: undefined, resource: x as ResourceConstant })
+                destinations.push({ amount: pushAmount[x as ResourceConstant]!, location: undefined, id: undefined, resource: x as ResourceConstant, originalAmount: pushAmount[x as ResourceConstant]! })
             }
         }
         return { source: sources, dest: destinations }
@@ -170,7 +172,7 @@ export class LogisticsManager extends Process<LogisticsManagerMemory> implements
         if (currentAssignment.id == undefined) return;
         let currentTaskIdx = this.memory.logisticsTasks.findIndex((t: StoredLogisticsTask) => t.id == currentAssignment.id);
         if (currentTaskIdx != -1) {
-            this.memory.logisticsTasks[currentTaskIdx].claimed -= currentAssignment.amount
+            this.memory.logisticsTasks[currentTaskIdx].claimed -= currentAssignment.originalAmount
         }
     }
 
@@ -178,8 +180,8 @@ export class LogisticsManager extends Process<LogisticsManagerMemory> implements
         if (assignment.id == undefined) return;
         let taskIdx = this.memory.logisticsTasks.findIndex((t: StoredLogisticsTask) => t.id == assignment.id);
         if (taskIdx == -1) return;
-        this.memory.logisticsTasks[taskIdx].claimed -= assignment.amount
-        this.memory.logisticsTasks[taskIdx].done += assignment.amount
+        this.memory.logisticsTasks[taskIdx].claimed -= assignment.originalAmount
+        this.memory.logisticsTasks[taskIdx].done += assignment.originalAmount
         if (this.memory.logisticsTasks[taskIdx].task.amount - this.memory.logisticsTasks[taskIdx].done <= 0) {
             if (this.memory.logisticsTasks[taskIdx].task.callback != undefined) {
                 this.kernel.getProcess(this.memory.logisticsTasks[taskIdx].task.callback!)!.onCarrierJobFinished(this.memory.logisticsTasks[taskIdx].task, this.memory.logisticsTasks[taskIdx].id)
@@ -225,8 +227,8 @@ export class LogisticsManager extends Process<LogisticsManagerMemory> implements
                 newScale = Number(x) == 0 ? Math.floor(newScale) : Math.ceil(newScale);
                 proc?.setScale(Math.floor(this.memory.scale))
             }
-            this.memory.scale = Math.max(this.memory.scale, 2)
-            this.memory.scale = Math.min(this.memory.scale, 10)
+            this.memory.scale = Math.max(this.memory.scale, 4)
+            this.memory.scale = Math.min(this.memory.scale, 12)
         }
     }
 

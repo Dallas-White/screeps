@@ -37,6 +37,9 @@ export default class PillagerProcess extends CreepProcess<PillagerProcessMemory,
     getSpawningPriority(): number {
         return 0;
     }
+    setScale(newScale: number): void {
+        this.memory.scale = newScale
+    }
     runCreep(c: Creep, creepMemory: PillagerCreepMemory): void {
         if (creepMemory.state == PillagerCreepState.DEPOSITING) {
             if (c.room.name != this.memory.destination || c.pos.x == 49 || c.pos.x == 0 || c.pos.y == 49 || c.pos.y == 0) {

@@ -7,6 +7,7 @@ import RemoteMiner from "processes/RemoteMiner";
 import "processes/combat/ControllerAttacker"
 import { SpawnManager } from "SpawnManager";
 import { ErrorMapper } from "utils/ErrorMapper";
+import { RoomIntel } from "utils/roomIntel";
 
 declare global {
   /*

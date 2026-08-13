@@ -161,6 +161,8 @@ export default class BuilderProcess extends CreepProcess<BuilderProcessMemory, B
     }
     setScale(n: number) {
         this.memory.scale = n
+        this.memory.__spawningRatio = 0
+        this.kernel.getProcess(this.memory.spawnManager)?.cancelSpawn(this.getPID())
         this.checkSpawning();
     }
 

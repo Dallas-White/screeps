@@ -3,6 +3,7 @@ import Process, { ProcessRegistry } from "Process";
 import { FlagHandler } from "processes/flagHandlers/flagHandler";
 import RoomManagerProcess from "processes/RoomManagerProcess";
 import { SpawnCallback, SpawnManager } from "SpawnManager";
+import { scanRoom } from "utils/roomIntel";
 
 
 interface initMemory {
@@ -58,6 +59,7 @@ export default class init extends Process<initMemory> implements SpawnManager {
             delete this.memory.rooms[x]
         }
         for (let x of Object.keys(Game.rooms)) {
+            scanRoom(Game.rooms[x])
             if (x in this.memory.rooms) continue
             if (!Game.rooms[x].controller?.my) continue
             let rmp = new RoomManagerProcess(Game.rooms[x], this.kernel, this)

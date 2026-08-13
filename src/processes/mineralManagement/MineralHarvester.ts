@@ -67,7 +67,7 @@ export default class MineralHarvester extends CreepProcess<MinerlaHarvesterMemor
         if (this.memory.container) {
             let container = Game.getObjectById(this.memory.container.id)
             if (container) {
-                if (container.store.getFreeCapacity() > 100) return
+                if (container.store.getFreeCapacity() < 100) return
             }
         }
         let returnCode = c.harvest(Game.getObjectById(this.memory.extractor)! as Mineral)

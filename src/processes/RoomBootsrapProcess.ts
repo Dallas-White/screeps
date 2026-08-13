@@ -5,9 +5,10 @@ import RoomManagerProcess from "./RoomManagerProcess";
 import { moveToRoom } from "utils/creepUtils";
 import { SpawnManager } from "SpawnManager";
 
+type RoomBootstrapSource = StructureContainer | StructureStorage | Source | Resource | StructureLink
+
 interface RoomBootstrapProcessMemory {
     room: string
-    source: string | undefined
 }
 
 enum BootstrapCreepState {
@@ -15,7 +16,10 @@ enum BootstrapCreepState {
     DEPOSITING = 1
 }
 interface BootstrapCreepMemory {
+    hasSlept: boolean
     state: BootstrapCreepState
+    source: Id<RoomBootstrapSource> | undefined
+    destination: Id<StructureExtension | StructureSpawn | ConstructionSite> | undefined
 }
 
 export class RoomBootstrapProcess extends CreepProcess<RoomBootstrapProcessMemory, BootstrapCreepMemory> {
@@ -31,7 +35,7 @@ export class RoomBootstrapProcess extends CreepProcess<RoomBootstrapProcessMemor
 
 
     constructor(kernel: Kernel, parent: SpawnManager, roomName: string) {
-        super(kernel, parent, parent, { room: roomName, source: undefined })
+        super(kernel, parent, parent, { room: roomName })
     }
     runCreep(c: Creep, creepMemory: BootstrapCreepMemory): void {
         if (c.room.name != this.memory.room) {
@@ -39,41 +43,46 @@ export class RoomBootstrapProcess extends CreepProcess<RoomBootstrapProcessMemor
             return
         }
         if (creepMemory.state == BootstrapCreepState.FETCHING) {
-            if (!this.memory.source) {
-                this.memory.source = c.pos.findClosestByRange(FIND_SOURCES)!.id
-            }
-            const droppedEnergy: _HasRoomPosition[] = c.room.find(FIND_DROPPED_RESOURCES, { filter: (filter) => filter.resourceType == RESOURCE_ENERGY && filter.amount > 50 });
-            let containers: _HasRoomPosition[] = c.room.find(FIND_STRUCTURES, {
-                filter: function (structure) {
-                    if (structure.structureType == STRUCTURE_STORAGE ||
-                        structure.structureType == STRUCTURE_LINK || structure.structureType == STRUCTURE_CONTAINER) {
-                        if (structure.store[RESOURCE_ENERGY] > 50) return true
-                    }
-                    return false
-
-                }
-            });
-            containers = containers.concat(droppedEnergy)
-            if (containers.length > 0) {
-                let closest_container = c.pos.findClosestByRange(containers)!
-                let energyPickedup = 0
-                let result: ScreepsReturnCode = ERR_INVALID_ARGS
-                if (closest_container instanceof Structure) {
-                    result = c.withdraw(closest_container, RESOURCE_ENERGY)
-                    energyPickedup = Math.min((closest_container as StructureContainer).store[RESOURCE_ENERGY], c.store.getCapacity())
-                } else if (closest_container instanceof Resource) {
-                    energyPickedup = Math.min((closest_container.amount, c.store.getCapacity()))
-                    result = c.pickup(closest_container)
+            if (!creepMemory.source || !Game.getObjectById(creepMemory.source)) {
+                let objects: RoomBootstrapSource[] = []
+                let structures = c.room.find(FIND_STRUCTURES, { filter: (s) => (s.structureType == STRUCTURE_CONTAINER || s.structureType == STRUCTURE_STORAGE || s.structureType == STRUCTURE_LINK) && s.store[RESOURCE_ENERGY] >= c.store.getFreeCapacity() }) as RoomBootstrapSource[]
+                objects = objects.concat(structures)
+                let dropped_resources = c.room.find(FIND_DROPPED_RESOURCES, { filter: (s) => s.resourceType == RESOURCE_ENERGY && s.amount >= c.store.getFreeCapacity() })
+                objects = objects.concat(dropped_resources)
+                if (objects.length > 0) {
+                    creepMemory.source = c.pos.findClosestByRange(objects)!.id
                 } else {
-                    throw new Error("Invalid structure type")
+                    creepMemory.source = c.pos.findClosestByRange(FIND_SOURCES, { filter: (s) => s.energy > 0 })?.id
+                    if (!creepMemory.source) {
+                        return
+                    }
                 }
-                if (result == ERR_NOT_IN_RANGE) {
-                    c.moveTo(closest_container)
+            }
+
+            let source = Game.getObjectById(creepMemory.source)
+            if (!source) return;
+            if (source instanceof Source) {
+                let harvestResult = c.harvest(source)
+                if (harvestResult == ERR_NOT_IN_RANGE) {
+                    c.moveTo(source)
+                } else if (harvestResult != OK) {
+                    creepMemory.source = undefined
+                }
+            } else if (source instanceof Structure) {
+                let withdrawResult = c.withdraw(source, RESOURCE_ENERGY)
+                if (withdrawResult == ERR_NOT_IN_RANGE) {
+                    c.moveTo(source)
+                } else {
+                    creepMemory.source = undefined
                 }
 
-            } else {
-                let miningResult = c.harvest(Game.getObjectById(this.memory.source) as Source)
-                if (miningResult == ERR_NOT_IN_RANGE) c.moveTo(Game.getObjectById(this.memory.source) as Source)
+            } else if (source instanceof Resource) {
+                let pickupResult = c.pickup(source)
+                if (pickupResult == ERR_NOT_IN_RANGE) {
+                    c.moveTo(source)
+                } else {
+                    creepMemory.source = undefined
+                }
             }
             if (c.store.getFreeCapacity() == 0) {
                 creepMemory.state = BootstrapCreepState.DEPOSITING
@@ -81,36 +90,54 @@ export class RoomBootstrapProcess extends CreepProcess<RoomBootstrapProcessMemor
         } else if (creepMemory.state == BootstrapCreepState.DEPOSITING) {
             if (c.store.getUsedCapacity() == 0) {
                 creepMemory.state = BootstrapCreepState.FETCHING
+                creepMemory.source = undefined
                 return
             }
-            let transferTarget = c.pos.findClosestByRange(FIND_MY_STRUCTURES, { filter: (struct) => (struct.structureType == STRUCTURE_SPAWN || struct.structureType == STRUCTURE_EXTENSION) && struct.store.getFreeCapacity(RESOURCE_ENERGY) > 0 });
-            if (!transferTarget) {
-                let buildTarget = c.pos.findClosestByRange(FIND_CONSTRUCTION_SITES, { filter: (structure) => structure.structureType == STRUCTURE_SPAWN });
-                if (!buildTarget) {
-                    this.park(c)
-                    return
+            if (!creepMemory.destination) {
+                let transferTarget = c.pos.findClosestByRange(FIND_MY_STRUCTURES, { filter: (struct) => (struct.structureType == STRUCTURE_SPAWN || struct.structureType == STRUCTURE_EXTENSION) && struct.store.getFreeCapacity(RESOURCE_ENERGY) > 0 });
+                if (!transferTarget) {
+                    let buildTarget = c.pos.findClosestByRange(FIND_CONSTRUCTION_SITES, { filter: (structure) => structure.structureType == STRUCTURE_SPAWN });
+                    if (!buildTarget) {
+                        if (creepMemory.hasSlept) {
+                            this.shutdown()
+                        } else {
+                            creepMemory.hasSlept = true
+                            this.sleep(10)
+                        }
+                        return
+                    } else {
+                        creepMemory.destination = buildTarget.id
+                    }
+                } else {
+                    creepMemory.destination = transferTarget.id as Id<StructureSpawn | StructureExtension>;
                 }
-                let buildResult = c.build(buildTarget);
-                if (buildResult == ERR_NOT_IN_RANGE) {
-                    c.moveTo(buildTarget);
-                }
-                return;
             }
-            let transferResult = c.transfer(transferTarget as unknown as StructureExtension, RESOURCE_ENERGY)
-            if (transferResult == ERR_NOT_IN_RANGE) {
-                c.moveTo(transferTarget);
-            } else if (transferResult == ERR_FULL) {
-                this.shutdown()
-            } else if (transferResult == 0) {
-                creepMemory.state = BootstrapCreepState.FETCHING
-            } else {
-                creepMemory.state = BootstrapCreepState.FETCHING
+            let destination = Game.getObjectById(creepMemory.destination)
+            if (!destination) {
+                creepMemory.destination = undefined
+                return
+            }
+            creepMemory.hasSlept = true
+            if (destination instanceof Structure) {
+                let depositResult = c.transfer(destination, RESOURCE_ENERGY)
+                if (depositResult == ERR_NOT_IN_RANGE) {
+                    c.moveTo(destination)
+                } else {
+                    creepMemory.destination = undefined
+                }
+            } else if (destination instanceof ConstructionSite) {
+                let buildResult = c.build(destination)
+                if (buildResult == ERR_NOT_IN_RANGE) {
+                    c.moveTo(destination)
+                } else if (buildResult != OK) {
+                    creepMemory.destination = undefined
+                }
             }
         }
     }
 
     initCreepMemory(): BootstrapCreepMemory {
-        return { state: BootstrapCreepState.FETCHING }
+        return { state: BootstrapCreepState.FETCHING, source: undefined, destination: undefined, hasSlept: false }
     }
 
     onCreepDeath(): void {

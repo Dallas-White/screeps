@@ -30,6 +30,8 @@ export default class WallBuilderProcess extends EnergyCreepProcess<{ scale: numb
 
     setScale(n: number) {
         this.memory.scale = n
+        this.memory.__spawningRatio = 0
+        this.kernel.getProcess(this.memory.spawnManager)?.cancelSpawn(this.getPID())
         this.checkSpawning();
     }
     killOnNoTarget(): boolean {

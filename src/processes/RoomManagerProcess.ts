@@ -19,8 +19,17 @@ import floodFill from "utils/floodfill";
 import { SpawnCallback, SpawnManager } from "SpawnManager";
 import { CarrierJobFinishedCallback, LogisticsManager } from "./LogisticsManager";
 import { TerminalManager, TerminalTask, TerminalTaskCallback, TerminalTaskID, TerminalTaskType } from "./structureManagement/TerminalManager";
+import ScoutProcess from "./scoutProcess";
 
 const SPAWN_EMA_ALPHA = 0.05
+
+const ECONOMY_STORAGE_ENERGY_SURPLUS_LEVELS = [
+    { min: 0, max: 50000, surplus: Infinity },
+    { min: 50000, max: 100000, surplus: 6 },
+    { min: 100000, max: 400000, surplus: 2 },
+    { min: 400000, max: Infinity, surplus: 0 },
+
+]
 
 interface SpawnRequest<T> {
     pid: Pid<SpawnCallback<T>>
@@ -50,6 +59,7 @@ interface RoomManagerMemory {
     bootstrapProcess: Pid<RoomBootstrapProcess> | undefined;
     defender: Pid<AttackCreepProcess> | undefined;
     healer: Pid<HealingProcess> | undefined;
+    scout: Pid<ScoutProcess> | undefined
     refillRequests: Record<Id<AnyStoreStructure>, LogisticsTaskID>
     needsRefillScan: boolean,
     terminalManager: Pid<TerminalManager> | undefined
@@ -77,7 +87,8 @@ class RoomManagerProcess extends Process<RoomManagerMemory> implements SpawnMana
             refillRequests: {},
             needsRefillScan: true,
             terminalClearTask: undefined,
-            terminalManager: undefined
+            terminalManager: undefined,
+            scout: undefined
         });
 
     }
@@ -285,53 +296,79 @@ class RoomManagerProcess extends Process<RoomManagerMemory> implements SpawnMana
 
         }
 
-        let energySum = 0;
-        if (Game.time % 2000 == 0 && (Game.time - this.memory.spawnTick) >= 1500) {
+        if (Game.time % 2000 == 0 && (Game.time - this.memory.spawnTick) >= 1500 && Game.rooms[this.memory.room].find(FIND_MY_CREEPS).length > 3) {
+            let energyProduction = 0
+            let energyConsumption = 0
             for (let x of this.getChildren()) {
                 if (!this.kernel.getProcess(x)) {
                     continue
                 }
+
                 if ("getAverageEnergyProduction" in this.kernel.getProcess(x)!) {
-                    energySum += (this.kernel.getProcess(x)! as unknown as EnergyProducer).getAverageEnergyProduction();
+                    energyProduction += (this.kernel.getProcess(x)! as unknown as EnergyProducer).getAverageEnergyProduction();
                     console.log("PID: " + x + " produced: " + (this.kernel.getProcess(x)! as unknown as EnergyProducer).getAverageEnergyProduction())
                 }
                 if ("getAverageEnergyConsumption" in this.kernel.getProcess(x)!) {
-                    energySum -= (this.kernel.getProcess(x)! as unknown as EnergyConsumer).getAverageEnergyConsumption();
+                    energyConsumption += (this.kernel.getProcess(x)! as unknown as EnergyConsumer).getAverageEnergyConsumption();
                     console.log("PID: " + x + " consumed: " + (this.kernel.getProcess(x)! as unknown as EnergyConsumer).getAverageEnergyConsumption())
                 }
             }
+            let energySum = energyProduction - energyConsumption;
 
             console.log("Average Energy Flow: " + energySum)
-            if (energySum > 2 || energySum < 1) {
+            let energySumTarget = 2;
+
+            if (Game.rooms[this.memory.room].storage) {
+                let storedEnergy = Game.rooms[this.memory.room].storage?.store[RESOURCE_ENERGY] || 0;
+                for (let x of ECONOMY_STORAGE_ENERGY_SURPLUS_LEVELS) {
+                    if (storedEnergy >= x.min && storedEnergy < x.max) {
+                        energySumTarget = x.surplus
+                        break;
+                    }
+                }
+            }
+            if (energySum > energySumTarget + 1 || energySum < energySumTarget - 1) {
                 let wallBuilder = this.memory.wallBuilderProcess ? (this.kernel.getProcess(this.memory.wallBuilderProcess) as WallBuilderProcess) : undefined;
                 let upgrader = this.kernel.getProcess(this.memory.upgradeProcess!) as UpgradeProcess;
                 let construction = this.memory.constructionProcess ? this.kernel.getProcess(this.memory.constructionProcess) as BuilderProcess : undefined;
-                let targetEnergyConsumption = energySum
-                targetEnergyConsumption += upgrader.getAverageEnergyConsumption()
-                if (wallBuilder) targetEnergyConsumption += wallBuilder.getAverageEnergyConsumption()
-                if (construction) targetEnergyConsumption += construction.getAverageEnergyConsumption()
+                let targetEnergyConsumptionDelta = energySum - energySumTarget;
+                targetEnergyConsumptionDelta += upgrader.getAverageEnergyConsumption()
+                if (wallBuilder) targetEnergyConsumptionDelta += wallBuilder.getAverageEnergyConsumption()
+                if (construction) targetEnergyConsumptionDelta += construction.getAverageEnergyConsumption()
 
-                if (wallBuilder || construction) targetEnergyConsumption = energySum / 2
-                if (wallBuilder && construction) targetEnergyConsumption = energySum / 3
+                if (wallBuilder || construction) targetEnergyConsumptionDelta = targetEnergyConsumptionDelta / 2
+                if (wallBuilder && construction) targetEnergyConsumptionDelta = targetEnergyConsumptionDelta / 3
                 let upgraderUsagePerPart = upgrader.getAverageEnergyConsumption() / upgrader.getAliveScale()
-                let upgraderDesiredScale = Math.floor(targetEnergyConsumption / upgraderUsagePerPart);
-                upgrader.setScale(Math.min(Math.max(upgraderDesiredScale, 3), 40))
+                let upgraderDesiredScale = Math.floor(targetEnergyConsumptionDelta / upgraderUsagePerPart);
+                upgrader.setScale(Math.min(Math.max(upgraderDesiredScale, 1), 40))
                 if (wallBuilder) {
                     let wallBuilderUsagePerPart = wallBuilder.getAverageEnergyConsumption() / wallBuilder.getAliveScale()
-                    let wallBuilderScale = Math.floor(targetEnergyConsumption / wallBuilderUsagePerPart);
-                    wallBuilder.setScale(Math.min(Math.max(wallBuilderScale, 3), 40))
+                    let wallBuilderScale = Math.floor(targetEnergyConsumptionDelta / wallBuilderUsagePerPart);
+                    wallBuilder.setScale(Math.min(Math.max(wallBuilderScale, 1), 40))
                 }
                 if (construction) {
                     let constructionUsagePerPart = construction.getAverageEnergyConsumption() / construction.getAliveScale()
-                    let constructionScale = Math.floor(targetEnergyConsumption / constructionUsagePerPart);
-                    construction.setScale(Math.min(Math.max(constructionScale, 3), 40))
+                    let constructionScale = Math.floor(targetEnergyConsumptionDelta / constructionUsagePerPart);
+                    construction.setScale(Math.min(Math.max(constructionScale, 1), 40))
                 }
             }
         }
-        if (Game.time % 50 == 0 && Game.rooms[this.memory.room].find(FIND_MY_CREEPS).length == 0 && (!this.memory.bootstrapProcess || !this.kernel.getProcess(this.memory.bootstrapProcess)) && Game.rooms[this.memory.room].controller!.level > 1) {
+        if (Game.rooms[this.memory.room].find(FIND_MY_CREEPS).length < 4 && (!this.memory.bootstrapProcess || !this.kernel.getProcess(this.memory.bootstrapProcess))) {
             let bootstrapProcess = new RoomBootstrapProcess(this.kernel, this, this.memory.room)
             this.kernel.addProcess(bootstrapProcess)
             this.memory.bootstrapProcess = bootstrapProcess.getPID()
+            let wallBuilder = this.memory.wallBuilderProcess ? (this.kernel.getProcess(this.memory.wallBuilderProcess) as WallBuilderProcess) : undefined;
+            let upgrader = this.kernel.getProcess(this.memory.upgradeProcess!) as UpgradeProcess;
+            let construction = this.memory.constructionProcess ? this.kernel.getProcess(this.memory.constructionProcess) as BuilderProcess : undefined;
+            if (wallBuilder) {
+                wallBuilder.setScale(1);
+            }
+            if (upgrader) {
+                upgrader.setScale(1);
+            }
+            if (construction) {
+                construction.setScale(1);
+            }
         }
         if (Game.rooms[this.memory.room].find(FIND_HOSTILE_CREEPS).length > 0) {
             let hostileAttackParts = _.sum(Game.rooms[this.memory.room].find(FIND_HOSTILE_CREEPS).map((c) => _.sum(_.filter(c.body, (c) => c.type == ATTACK || c.type == HEAL || c.type == RANGED_ATTACK))))
@@ -355,13 +392,35 @@ class RoomManagerProcess extends Process<RoomManagerMemory> implements SpawnMana
             this.memory.healer = undefined
         }
 
-        if (this.memory.terminalManager != undefined && !this.memory.terminalClearTask && (Game.rooms[this.memory.room].storage?.store[RESOURCE_ENERGY] || 0) > 500000) {
-            this.memory.terminalClearTask = this.kernel.getProcess(this.memory.terminalManager!)?.addTask({
-                taskType: TerminalTaskType.SELL,
-                resource: "energy",
-                amount: 100000,
-                priority: 100
-            }, this.getPID(), 500)
+        if (this.memory.terminalManager != undefined && !this.memory.terminalClearTask && Game.rooms[this.memory.room].storage) {
+
+            if ((Game.rooms[this.memory.room].storage?.store[RESOURCE_ENERGY] || 0) > 500000) {
+                this.memory.terminalClearTask = this.kernel.getProcess(this.memory.terminalManager!)?.addTask({
+                    taskType: TerminalTaskType.SELL,
+                    resource: "energy",
+                    amount: 100000,
+                    priority: 100
+                }, this.getPID(), 100)
+            } else {
+                for (let resource in Game.rooms[this.memory.room].storage?.store) {
+                    if (resource == RESOURCE_ENERGY || resource == RESOURCE_BATTERY || resource == RESOURCE_OPS || resource == RESOURCE_POWER) continue
+                    if ((Game.rooms[this.memory.room].storage?.store[resource as ResourceConstant] || 0) > 110000) {
+                        this.memory.terminalClearTask = this.kernel.getProcess(this.memory.terminalManager!)?.addTask({
+                            taskType: TerminalTaskType.SELL,
+                            resource: resource as ResourceConstant,
+                            amount: 10000,
+                            priority: 100
+                        }, this.getPID(), 100)
+                        break
+                    }
+
+                }
+            }
+        }
+        if (!this.memory.scout) {
+            let scoutProc = new ScoutProcess(this.kernel, this)
+            let scoutPid = this.kernel.addProcess(scoutProc)
+            this.memory.scout = scoutPid
         }
     }
 

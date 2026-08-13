@@ -77,7 +77,7 @@ export default class TowerProcess extends Process<TowerProcessMemory> implements
             this.shutdown()
             return
         }
-        if (tower.store.getFreeCapacity(RESOURCE_ENERGY) > 100) {
+        if (tower.store.getFreeCapacity(RESOURCE_ENERGY) > 400) {
             if (!this.memory.refillJob) {
                 this.memory.refillJob = (this.getParent() as RoomManagerProcess).getLogisticsManager().addLogisticTask({
                     priority: 1000,
